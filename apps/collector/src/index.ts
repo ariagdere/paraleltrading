@@ -1,8 +1,9 @@
 // collector: ham verileri toplayıp Postgres'e yazan tek süreç. Açılışta migration'ları uygular.
-// Binance L/S (5 dakikada bir), heatmap (saatte bir), Axi mumları (dakikada bir), sembol bilgisi (6 saatte bir)
-// ve günlük bias raporları (5 dakikada bir bias-data dalına bakar).
+// Binance L/S (5 dakikada bir), heatmap (saatte bir, başarısız pencere aynı saatte iki kez daha denenir),
+// Axi mumları (dakikada bir; 30 dakikada bir boşluk denetimi), sembol bilgisi (6 saatte bir; okunamazsa
+// 15 dakikada bir yeniden) ve günlük bias raporları (5 dakikada bir bias-data dalına bakar).
 import { createPool, migrate, type Pool } from '@pt/db'
-import { backfillAxi, EXPECTED_EVERY, syncAxi, syncSpec, TIMEFRAMES } from './axi.js'
+import { auditAxiGaps, backfillAxi, EXPECTED_EVERY, syncAxi, syncSpec, TIMEFRAMES } from './axi.js'
 import { syncBias } from './bias.js'
 import { config } from './config.js'
 import { heatmapHour, SPANS } from './heatmap.js'
@@ -82,7 +83,8 @@ if (config.metaapi.token && config.metaapi.accountId) {
   void syncSpec(pool)
   jobs.push(every('axi', MINUTE, 3_000, () => syncAxi(pool)))
   jobs.push(every('axi-backfill', MINUTE, 30_000, () => backfillAxi(pool)))
-  jobs.push(every('axi-spec', 6 * 60 * MINUTE, 7 * MINUTE, () => syncSpec(pool)))
+  jobs.push(every('axi-gaps', 30 * MINUTE, 20 * MINUTE + 5_000, () => auditAxiGaps(pool).then(() => undefined)))
+  jobs.push(every('axi-spec', 15 * MINUTE, 7 * MINUTE, () => syncSpec(pool)))
 } else {
   console.warn('[axi] METAAPI_TOKEN ya da METAAPI_ACCOUNT_ID tanımlı değil; Axi mumları kapalı')
   for (const tf of TIMEFRAMES) {

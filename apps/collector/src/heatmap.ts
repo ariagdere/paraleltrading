@@ -4,13 +4,15 @@ import { config } from './config.js'
 import { logRun, markFail, markOk } from './status.js'
 
 // CoinGlass model1 likidasyon heatmap'i (Apify aktörü), 12h, 24h ve 48h pencerelerde saatte bir.
-// Başlat → bitmesini bekle → dataset'i oku. Bekleme süresi dolarsa yeniden başlatılmaz: çalıştırma Apify'da
-// sürer ve ücretlenir, ikinci çalıştırma yalnız maliyeti ikiye katlar.
+// Başlat → bitmesini bekle → dataset'i oku. Başarısız biten çalıştırma aynı saat içinde yeniden denenir (runSpan).
+// Bekleme süresi dolarsa yeniden başlatılmaz: çalıştırma Apify'da sürer ve ücretlenir, ikinci çalıştırma yalnız
+// maliyeti ikiye katlar.
 
 export type Span = '12h' | '24h' | '48h'
 export const SPANS: Span[] = ['12h', '24h', '48h']
 const TERMINAL = new Set(['SUCCEEDED', 'FAILED', 'ABORTED', 'TIMED-OUT'])
 const STAGGER_MS = 15_000
+const READ_PAUSE_MS = 5_000 // geçici okuma hatasından sonra bekleme
 
 export type Mode = { name: string; twoHourly: Span[] }
 // Bütçe bekçisi: ay sonu tahmini bütçeyi aşarsa önce 48h, sonra 24h iki saatte bire iner.
@@ -53,6 +55,10 @@ type ApifyRun = {
   stats?: { runTimeSecs?: number }
 }
 
+// Tekrar denenmeyecek hata: kalıcı Apify reddi, değişmiş çıktı biçimi ya da hâlâ süren çalıştırma (ikinci
+// çalıştırma maliyeti ikiye katlar).
+class Final extends Error {}
+
 async function apify<T>(path: string, init: RequestInit = {}, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${config.apify.baseUrl}/v2${path}`, {
     ...init,
@@ -60,7 +66,11 @@ async function apify<T>(path: string, init: RequestInit = {}, signal?: AbortSign
     headers: { Authorization: `Bearer ${config.apify.token}`, 'Content-Type': 'application/json' },
   })
   const text = await res.text()
-  if (!res.ok) throw new Error(`Apify ${init.method ?? 'GET'} ${path.split('?')[0]}: HTTP ${res.status} ${text.slice(0, 300)}`)
+  if (!res.ok) {
+    const msg = `Apify ${init.method ?? 'GET'} ${path.split('?')[0]}: HTTP ${res.status} ${text.slice(0, 300)}`
+    // 429 ve 5xx geçici; diğer 4xx (aylık limit dolu, token geçersiz...) tekrar denemekle düzelmez.
+    throw res.status === 429 || res.status >= 500 ? new Error(msg) : new Final(msg)
+  }
   return JSON.parse(text) as T
 }
 
@@ -83,10 +93,34 @@ async function usage(pool: Pool): Promise<Usage> {
   return { usedUsd, ownSpendUsd: rows[0]?.spent ?? 0, cycleStart, cycleEnd }
 }
 
-async function waitForRun(id: string, deadline: number, signal: AbortSignal): Promise<ApifyRun> {
+// Çalıştırma bitene kadar (en çok deadline'a kadar) sorar. Sorgu geçici hata verirse (ağ, 429, 5xx) aynı
+// çalıştırmayı sormayı sürdürür: yenisini başlatmak ikinci kez ücretlendirir. Süre dolarsa son bilinen durum döner.
+async function waitForRun(id: string, deadline: number, signal: AbortSignal): Promise<ApifyRun | null> {
+  let run: ApifyRun | null = null
   for (;;) {
-    const { data } = await apify<{ data: ApifyRun }>(`/actor-runs/${id}?waitForFinish=60`, {}, signal)
-    if (TERMINAL.has(data.status) || Date.now() >= deadline) return data
+    try {
+      run = (await apify<{ data: ApifyRun }>(`/actor-runs/${id}?waitForFinish=60`, {}, signal)).data
+      if (TERMINAL.has(run.status)) return run
+    } catch (err) {
+      if (err instanceof Final || signal.aborted) throw err
+      if (Date.now() < deadline) {
+        await sleep(READ_PAUSE_MS, signal) // beklemeden sonra süre dolmuş olsa da bir kez daha sorulur
+        continue
+      }
+    }
+    if (Date.now() >= deadline) return run
+  }
+}
+
+// Biten çalıştırmanın çıktısı; okuma geçici hata verirse aynı dataset 5 saniye arayla en çok 3 kez okunur.
+async function readItems(datasetId: string, signal: AbortSignal): Promise<unknown[]> {
+  for (let i = 1; ; i++) {
+    try {
+      return await apify<unknown[]>(`/datasets/${datasetId}/items?clean=true&format=json`, {}, signal)
+    } catch (err) {
+      if (err instanceof Final || signal.aborted || i >= 3) throw err
+      await sleep(READ_PAUSE_MS, signal)
+    }
   }
 }
 
@@ -106,13 +140,14 @@ const toDate = (v: unknown): Date | null => {
   return new Date(n < 1e12 ? n * 1000 : n)
 }
 
-// Hızlı bakış sütunları; biçim beklenmedikse ya da heatmap boşsa hata verir (snapshot yazılmaz).
+// Hızlı bakış sütunları; biçim beklenmedikse ya da heatmap boşsa hata verir (snapshot yazılmaz). Boş çıktı ve
+// aktör hatası geçici sayılır; değişmiş biçim tekrar denemekle düzelmez.
 export function summarize(item: unknown) {
   const p = item as Payload | undefined
   if (!p || typeof p !== 'object') throw new Error('dataset boş')
   if (p.success === false) throw new Error(`aktör başarısız döndü: ${p.message ?? ''}`)
   const { y_axis: levels, liquidation_leverage_data: cells, price_candlesticks: candles } = p
-  if (!Array.isArray(levels) || !Array.isArray(cells) || !Array.isArray(candles)) throw new Error('beklenmeyen çıktı biçimi')
+  if (!Array.isArray(levels) || !Array.isArray(cells) || !Array.isArray(candles)) throw new Final('beklenmeyen çıktı biçimi')
   if (cells.length === 0) throw new Error('heatmap boş (hücre yok)')
   return {
     updateTime: toDate(p.updateTime),
@@ -124,67 +159,111 @@ export function summarize(item: unknown) {
   }
 }
 
+// Bir pencerenin saatlik turu. Çalıştırma FAILED/ABORTED/TIMED-OUT biterse, çıktı boşsa ya da aktör hata
+// döndürdüyse, başlatma ya da okuma geçici hata verirse (ağ, 429, 5xx) aynı saat içinde HEATMAP_RETRY_DELAYS_MS
+// aralıklarıyla yeni çalıştırma başlatılır. Hâlâ süren çalıştırma, kalıcı Apify reddi (aylık limit dolu, token
+// geçersiz), değişmiş çıktı biçimi ve servis kapanışı tekrar denenmez.
 async function runSpan(pool: Pool, span: Span, expectedEvery: string, plan: Record<string, unknown>, signal: AbortSignal) {
   const source = `heatmap:${span}`
-  const startedAt = new Date()
-  let runId: string | undefined
-  try {
-    const started = await apify<{ data: ApifyRun }>(
-      `/acts/${config.apify.actorId}/runs`,
-      { method: 'POST', body: JSON.stringify({ symbol: 'BTC', model: 'model1', interval: span }) },
-      signal,
-    )
-    runId = started.data.id
-    const run = await waitForRun(runId, startedAt.getTime() + config.apify.waitMinutes * 60_000, signal)
-    if (!TERMINAL.has(run.status)) {
-      throw new Error(`çalıştırma ${config.apify.waitMinutes} dakikada bitmedi (${run.status}); Apify'da sürüyor olabilir`)
+  const delays = config.apify.retryDelaysMs
+  for (let attempt = 1; ; attempt++) {
+    const startedAt = new Date()
+    let runId: string | undefined
+    try {
+      await attemptSpan(pool, span, expectedEvery, { ...plan, attempt }, startedAt, signal, (id) => (runId = id))
+      if (attempt > 1) console.log(`[heatmap] ${span}: ${attempt}. deneme başarılı`)
+      return
+    } catch (err) {
+      const final = signal.aborted || err instanceof Final || attempt > delays.length
+      const msg = signal.aborted ? "servis kapandı; çalıştırma Apify'da sürüyor olabilir" : (err as Error).message
+      const next = final ? '' : `; ${Math.round(delays[attempt - 1]! / 1000)} sn sonra tekrar denenecek`
+      console.error(`[heatmap] ${span}: ${msg} (deneme ${attempt}${next})`)
+      await logRun(pool, {
+        source,
+        startedAt,
+        ok: false,
+        costUsd: runId ? config.apify.runCostUsd : 0,
+        detail: { runId, ...plan, attempt },
+        error: msg,
+      })
+      if (final) {
+        await markFail(pool, source, expectedEvery, attempt > 1 ? `${msg} (${attempt} deneme)` : msg)
+        return
+      }
+      await sleep(delays[attempt - 1]!, signal)
+      if (signal.aborted) {
+        await markFail(pool, source, expectedEvery, `servis kapandı, tekrar denenmedi: ${msg}`)
+        return
+      }
     }
-    if (run.status !== 'SUCCEEDED') throw new Error(`Apify çalıştırması ${run.status}`)
-    const items = await apify<unknown[]>(`/datasets/${run.defaultDatasetId}/items?clean=true&format=json`, {}, signal)
-    const item = Array.isArray(items) ? items[0] : undefined
-    const s = summarize(item)
-    const res = await pool.query(
-      `INSERT INTO heatmap_snapshots
-         (span, apify_run_id, run_started_at, update_time, first_col_time, last_col_time, n_cols, n_levels, n_cells, payload_gz)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       ON CONFLICT DO NOTHING`,
-      [
-        span,
-        runId,
-        run.startedAt ? new Date(run.startedAt) : startedAt,
-        s.updateTime,
-        s.firstColTime,
-        s.lastColTime,
-        s.nCols,
-        s.nLevels,
-        s.nCells,
-        gzipSync(JSON.stringify(item)),
-      ],
-    )
-    const written = res.rowCount ?? 0
-    await logRun(pool, {
-      source,
-      startedAt,
-      ok: true,
-      rowsWritten: written,
-      costUsd: config.apify.runCostUsd,
-      // duplicate: CoinGlass veriyi yenilememiş (aynı updateTime), snapshot ikinci kez yazılmadı.
-      detail: { runId, ...plan, runTimeSecs: run.stats?.runTimeSecs, nCells: s.nCells, updateTime: s.updateTime, duplicate: written === 0 },
-    })
-    await markOk(pool, source, expectedEvery, s.updateTime)
-  } catch (err) {
-    const msg = signal.aborted ? "servis kapandı; çalıştırma Apify'da sürüyor olabilir" : (err as Error).message
-    console.error(`[heatmap] ${span}: ${msg}`)
-    await logRun(pool, {
-      source,
-      startedAt,
-      ok: false,
-      costUsd: runId ? config.apify.runCostUsd : 0,
-      detail: { runId, ...plan },
-      error: msg,
-    })
-    await markFail(pool, source, expectedEvery, msg)
   }
+}
+
+// Kapanışta hemen biten bekleme.
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve()
+    const t = setTimeout(resolve, ms)
+    signal.addEventListener('abort', () => (clearTimeout(t), resolve()), { once: true })
+  })
+}
+
+// Tek deneme: başlat, bitmesini bekle, oku, yaz. Hata fırlatırsa runSpan tekrar deneyip denemeyeceğine karar verir.
+async function attemptSpan(
+  pool: Pool,
+  span: Span,
+  expectedEvery: string,
+  plan: Record<string, unknown>,
+  startedAt: Date,
+  signal: AbortSignal,
+  onRunId: (id: string) => void,
+): Promise<void> {
+  const source = `heatmap:${span}`
+  const started = await apify<{ data: ApifyRun }>(
+    `/acts/${config.apify.actorId}/runs`,
+    { method: 'POST', body: JSON.stringify({ symbol: 'BTC', model: 'model1', interval: span }) },
+    signal,
+  )
+  const runId = started.data.id
+  onRunId(runId)
+  const run = await waitForRun(runId, startedAt.getTime() + config.apify.waitMinutes * 60_000, signal)
+  if (!run || !TERMINAL.has(run.status)) {
+    const status = run?.status ?? 'durumu okunamadı'
+    throw new Final(`çalıştırma ${config.apify.waitMinutes} dakikada bitmedi (${status}); Apify'da sürüyor olabilir`)
+  }
+  if (run.status !== 'SUCCEEDED') throw new Error(`Apify çalıştırması ${run.status}`)
+  const items = await readItems(run.defaultDatasetId, signal)
+  const item = Array.isArray(items) ? items[0] : undefined
+  const s = summarize(item)
+  const res = await pool.query(
+    `INSERT INTO heatmap_snapshots
+       (span, apify_run_id, run_started_at, update_time, first_col_time, last_col_time, n_cols, n_levels, n_cells, payload_gz)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     ON CONFLICT DO NOTHING`,
+    [
+      span,
+      runId,
+      run.startedAt ? new Date(run.startedAt) : startedAt,
+      s.updateTime,
+      s.firstColTime,
+      s.lastColTime,
+      s.nCols,
+      s.nLevels,
+      s.nCells,
+      gzipSync(JSON.stringify(item)),
+    ],
+  )
+  const written = res.rowCount ?? 0
+  await logRun(pool, {
+    source,
+    startedAt,
+    ok: true,
+    rowsWritten: written,
+    costUsd: config.apify.runCostUsd,
+    // duplicate: CoinGlass veriyi yenilememiş (aynı updateTime), snapshot ikinci kez yazılmadı.
+    detail: { runId, ...plan, runTimeSecs: run.stats?.runTimeSecs, nCells: s.nCells, updateTime: s.updateTime, duplicate: written === 0 },
+  })
+  await markOk(pool, source, expectedEvery, s.updateTime)
 }
 
 // Saat başı turu: bütçeye göre bu saat hangi pencerelerin çalışacağına karar verir, sonra hepsini

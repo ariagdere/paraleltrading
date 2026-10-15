@@ -63,4 +63,4 @@ Heatmap snapshot'ları ve L/S serisi sonradan geri çekilemez (Binance L/S için
 
 ## Disk tahmini
 
-Üç heatmap penceresi saatte bir gzip'li yazılınca veritabanı yılda kabaca 1,5 ile 3,5 GB büyür; mumlar ve L/S bunun yanında küçük kalır. Kesin rakam ilk gerçek 24h ve 48h çıktılarıyla belli olur. Railway Hobby planında bir volume 5 GB ile sınırlı; Pro'da 1 TB'a kadar büyütülebilir. Disk ücreti GB başına aylık 0,15 dolar.
+Üç heatmap penceresi saatte bir gzip'li yazılınca veritabanı yılda kabaca 1 GB büyür. İlk gerçek çıktılarda snapshot başına 12h yaklaşık 18 KB, 24h 50 KB, 48h 46 KB tutuyor (saatte toplam 115 KB civarı); mumlar ve L/S bunun yanında küçük kalır. Railway Hobby planında bir volume 5 GB ile sınırlı; Pro'da 1 TB'a kadar büyütülebilir. Disk ücreti GB başına aylık 0,15 dolar.
