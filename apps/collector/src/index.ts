@@ -1,7 +1,9 @@
 // collector: ham verileri toplayıp Postgres'e yazan tek süreç. Açılışta migration'ları uygular.
-// Binance L/S (5 dakikada bir), heatmap (saatte bir), Axi mumları (dakikada bir) ve sembol bilgisi (6 saatte bir).
+// Binance L/S (5 dakikada bir), heatmap (saatte bir), Axi mumları (dakikada bir), sembol bilgisi (6 saatte bir)
+// ve günlük bias raporları (5 dakikada bir bias-data dalına bakar).
 import { createPool, migrate, type Pool } from '@pt/db'
 import { backfillAxi, EXPECTED_EVERY, syncAxi, syncSpec, TIMEFRAMES } from './axi.js'
+import { syncBias } from './bias.js'
 import { config } from './config.js'
 import { heatmapHour, SPANS } from './heatmap.js'
 import { syncLsr } from './lsr.js'
@@ -57,6 +59,9 @@ process.once('SIGINT', () => void stop('SIGINT'))
 
 await syncLsr(pool)
 jobs.push(every('lsr', 5 * MINUTE, 20_000, () => syncLsr(pool)))
+
+void syncBias(pool)
+jobs.push(every('bias', 5 * MINUTE, 45_000, () => syncBias(pool)))
 
 if (config.apify.token && config.apify.actorId) {
   jobs.push(every('heatmap', 60 * MINUTE, 30_000, (slot) => heatmapHour(pool, slot, shutdown.signal)))
