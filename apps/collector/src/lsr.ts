@@ -1,6 +1,5 @@
-import type { Pool } from '@pt/db'
+import { logRun, markFail, markOk, type Pool } from '@pt/db'
 import { config } from './config.js'
-import { logRun, markFail, markOk } from './status.js'
 
 // Binance L/S oranları, 5m: global (hesap oranı) ve top_position (TT pozisyon oranı). Her tur son kayıttan
 // bugüne boşluğu doldurur; servis bir süre kapalı kalsa da açılışta kendini tamamlar. İlk açılışta

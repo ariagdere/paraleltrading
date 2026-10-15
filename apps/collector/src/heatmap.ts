@@ -1,7 +1,6 @@
 import { gzipSync } from 'node:zlib'
-import type { Pool } from '@pt/db'
+import { logRun, markFail, markOk, type Pool } from '@pt/db'
 import { config } from './config.js'
-import { logRun, markFail, markOk } from './status.js'
 
 // CoinGlass model1 likidasyon heatmap'i (Apify aktörü), 12h, 24h ve 48h pencerelerde saatte bir.
 // Başlat → bitmesini bekle → dataset'i oku. Başarısız biten çalıştırma aynı saat içinde yeniden denenir (runSpan).
