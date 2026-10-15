@@ -1,4 +1,4 @@
-import type { Pool } from '@pt/db'
+import type { Pool } from 'pg'
 
 const clip = (s: string) => (s.length > 2000 ? `${s.slice(0, 2000)}…` : s)
 

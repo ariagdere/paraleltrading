@@ -7,9 +7,9 @@ Plan: proje dokümanı "Hakari 2 — Sürekli Veri Akışı Planı".
 
 | Yol | İçerik |
 |---|---|
-| `packages/db` | Postgres bağlantısı, migration çalıştırıcı, şema (`migrations/`) |
+| `packages/db` | Postgres bağlantısı, migration çalıştırıcı, şema (`migrations/`); servislerin ortak sağlık kaydı ve zamanlayıcısı |
 | `apps/collector` | Binance L/S (5 dk), heatmap (saatlik; başarısız olursa aynı saatte yeniden), Axi mumları 1m–1d (dakikada bir; 30 dakikada bir boşluk denetimi), sembol bilgisi ve günlük bias raporları toplayıcı; isteğe bağlı eski DB kopyası; açılışta migration'ları uygular |
-| `apps/core` | (sonra) göstergeler, L/S açıları, cluster'lar |
+| `apps/core` | Axi göstergeleri: ZLEMA bölgesi, RSI 14, ATR 14 (15m, 1h, 4h, 1d; dakikada bir); L/S açıları ve cluster'lar sonra |
 | `apps/web` | (sonra) sağlık ve son değerler sayfası |
 
 ## Kurallar
@@ -27,7 +27,9 @@ npm install
 DATABASE_URL="..." PGSSL=true npm run migrate   # şemayı uygular
 npm run typecheck
 npm run start -w @pt/collector                  # collector'ı yerelde çalıştırır
+npm run start -w @pt/core                       # core'u yerelde çalıştırır
 ```
 
 - Postgres kurulumu: [docs/postgres-kurulum.md](docs/postgres-kurulum.md)
 - collector servisi: [docs/railway-collector.md](docs/railway-collector.md)
+- core servisi: [docs/railway-core.md](docs/railway-core.md)

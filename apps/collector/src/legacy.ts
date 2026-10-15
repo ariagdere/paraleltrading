@@ -1,8 +1,7 @@
 import { gzipSync } from 'node:zlib'
-import { createPool, type Pool } from '@pt/db'
+import { createPool, logRun, markFail, markOk, type Pool } from '@pt/db'
 import { config } from './config.js'
 import { summarize } from './heatmap.js'
-import { logRun, markFail, markOk } from './status.js'
 
 // Eski sistemin veritabanından tek yönlü kopya; OLD_DATABASE_URL tanımlıysa açılışta ve saatte bir.
 //   orders, order_events → legacy_orders, legacy_order_events: eski sistem çalıştıkça yenileri de gelir

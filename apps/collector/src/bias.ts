@@ -1,6 +1,5 @@
-import type { Pool } from '@pt/db'
+import { logRun, markFail, markOk, type Pool } from '@pt/db'
 import { config } from './config.js'
-import { logRun, markFail, markOk } from './status.js'
 
 // Günlük bias: Claude rutininin hakari-dashboard reposunun bias-data dalına yazdığı raporlar (data/daily-bias/*.json).
 // 5 dakikada bir dalın ucu git üzerinden okunur (GitHub API kotası harcamaz). Uç değiştiyse ya da açılışta klasör

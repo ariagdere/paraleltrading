@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
-import type { Pool } from '@pt/db'
+import { logRun, markFail, markOk, type Pool } from '@pt/db'
 import { config } from './config.js'
-import { logRun, markFail, markOk } from './status.js'
 
 // Axi BTCUSD mumları (MetaApi geçmiş API'si): 1m, 5m, 15m, 1h, 4h, 1d, Axi'nin kendi sınırlarıyla.
 // İki ayrı iş:
