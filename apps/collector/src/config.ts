@@ -31,6 +31,8 @@ export const config = {
     backfillFrom: time('AXI_BACKFILL_FROM', '2026-09-18T00:00:00Z'),
     // Geriye doldururken sayfalar arası bekleme: MetaApi istek kotası eski dashboard'la ortak.
     pagePauseMs: num('AXI_PAGE_PAUSE_MS', 2000),
+    // Geriye doldurma hata verirse ilk tekrar bu kadar dakika sonra; her hatada ikiye katlanır (en çok 60).
+    backfillRetryMinutes: num('AXI_BACKFILL_RETRY_MINUTES', 10),
   },
   apify: {
     token: process.env.APIFY_TOKEN ?? '',
