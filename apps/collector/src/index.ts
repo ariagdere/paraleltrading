@@ -6,6 +6,7 @@ import { backfillAxi, EXPECTED_EVERY, syncAxi, syncSpec, TIMEFRAMES } from './ax
 import { syncBias } from './bias.js'
 import { config } from './config.js'
 import { heatmapHour, SPANS } from './heatmap.js'
+import { closeLegacy, syncLegacy } from './legacy.js'
 import { syncLsr } from './lsr.js'
 import { every, type Job } from './schedule.js'
 import { markFail } from './status.js'
@@ -50,6 +51,7 @@ async function stop(signal: string) {
   for (const job of jobs) job.stop()
   shutdown.abort()
   await Promise.race([Promise.all(jobs.map((j) => j.idle())), new Promise((r) => setTimeout(r, 20_000))])
+  await closeLegacy()
   lock.release()
   await pool.end()
   process.exit(0)
@@ -62,6 +64,12 @@ jobs.push(every('lsr', 5 * MINUTE, 20_000, () => syncLsr(pool)))
 
 void syncBias(pool)
 jobs.push(every('bias', 5 * MINUTE, 45_000, () => syncBias(pool)))
+
+// Eski sistemden kopya (isteğe bağlı): saat başı heatmap turuyla çakışmasın diye xx:40'ta.
+if (config.legacy.url) {
+  void syncLegacy(pool)
+  jobs.push(every('eski', 60 * MINUTE, 40 * MINUTE, () => syncLegacy(pool)))
+}
 
 if (config.apify.token && config.apify.actorId) {
   jobs.push(every('heatmap', 60 * MINUTE, 30_000, (slot) => heatmapHour(pool, slot, shutdown.signal)))

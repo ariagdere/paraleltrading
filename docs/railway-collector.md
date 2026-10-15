@@ -55,8 +55,26 @@ Yeni projede New → GitHub Repo → `ariagdere/paraleltrading`.
 | `HEATMAP_RUN_COST_USD` | `0.01` | Çalıştırma başına ücret |
 | `HEATMAP_WAIT_MINUTES` | `15` | Bir çalıştırmanın bitmesi için en uzun bekleme |
 | `LSR_BACKFILL_FROM` | `2026-09-18T00:00:00Z` | İlk açılışta L/S'nin başlangıcı (Binance yalnız son 30 günü veriyor) |
+| `OLD_DATABASE_URL` | boş | Eski sistemin Postgres'i (eski projedeki Postgres servisinin `DATABASE_PUBLIC_URL` değeri). Verilirse eski DB'den kopya açılır (aşağıda) |
+| `OLD_PGSSL` | `true` | Eski DB SSL kabul etmiyorsa `false` |
+| `LEGACY_FROM` | boş | Heatmap ve L/S kopyasının başlangıcı; boşsa eski DB'de ne varsa |
 
 Apify hesabındaki aylık kullanım limiti $29 olmalı; bekçi bir sebeple çalışmazsa son emniyet o.
+
+### Eski DB'den kopya
+
+`OLD_DATABASE_URL` verilince collector açılışta ve saatte bir (xx:40) eski veritabanından kopyalar. Eski DB'ye salt okunur oturumla bağlanır; bu her turda kontrol edilir, eski DB'ye hiçbir şey yazılmaz.
+
+| Eski tablo | Yeni tablo | Ne kopyalanır |
+|---|---|---|
+| `orders`, `order_events` | `legacy_orders`, `legacy_order_events` | Hepsi; eski sistem çalıştıkça yenileri ve değişenler de gelir (doğrulama ve ileri izleme) |
+| `red_folder_events` | `calendar_events` | Hepsi |
+| `apify_heatmap_snapshots` | `heatmap_snapshots` (span 12h) | Ham biçimdekiler (Temmuz 2026'dan), yeni collector'ın ilk snapshot'ından öncesi |
+| `lsr_series` (5m) | `lsr_series` | Yeni serinin başladığı 18 Eylül'den öncesi (Ağustos sonundan) |
+
+Heatmap ve L/S geçmişi bir kez tamamlanınca (`collector_runs`'ta `legacy:heatmap`, `legacy:lsr`) sonraki açılışlarda yeniden taranmaz; yarıda kalırsa zaten kopyalanmış snapshot'lar yeniden indirilmez. İşlemler, olaylar ve takvim her turda güncellenir.
+
+Eski sistem kapanınca `OLD_DATABASE_URL` silinebilir; kopyalanan veri yerinde kalır.
 
 ## 4. İlk açılışta beklenenler
 
@@ -80,6 +98,7 @@ Deploy loglarında sırayla:
 - MetaApi'de daha eski mum yoksa `[axi] 1m: MetaApi geçmişi ... tarihinde bitiyor` yazar; hepsi bitince `[axi] geriye doldurma tamamlandı`.
 - Bias: ilk açılışta `bias-data` dalındaki bütün raporlar yazılır (`[bias] 2026-10-15T1419.json: SHORT MEDIUM, skor -45` gibi). Sonra dal 5 dakikada bir kontrol edilir; yeni rapor gelince aynı satır düşer.
 - Heatmap ilk kez bir sonraki saat başından 30 saniye sonra çalışır; üç çalıştırma 5 dakika içinde biter.
+- Eski DB kopyası (`OLD_DATABASE_URL` verildiyse): ilk açılışta `uygulandı: 002_eski_sistem.sql`, sonra `[eski] kopyalandı: orders ..., orderEvents ..., calendar ..., heatmap12h ..., lsr5m ...`. Sonraki saatlerde yalnız yeni ya da değişen satırlar gelir; bir şey değişmediyse satır düşmez.
 
 Deploy sırasında eski süreç kapanana kadar yenisi `başka bir collector çalışıyor; kilit bekleniyor` yazar; bu normal, aynı saat iki kez heatmap başlatılmasın diye.
 
@@ -107,6 +126,10 @@ FROM axi_candles GROUP BY timeframe ORDER BY min(open_time) DESC;
 -- son bias raporları
 SELECT source_file, committed_at, bias, confidence, sentiment_score, risk_regime
 FROM daily_bias ORDER BY committed_at DESC LIMIT 5;
+
+-- eski sistemden kopya
+SELECT magic, count(*), min(opened_at), max(closed_at) FROM legacy_orders GROUP BY magic ORDER BY count(*) DESC;
+SELECT source, count(*), min(received_at), max(received_at) FROM heatmap_snapshots GROUP BY source;
 ```
 
 - Sağlıkta `consecutive_failures` 0 olmalı.
@@ -114,5 +137,6 @@ FROM daily_bias ORDER BY committed_at DESC LIMIT 5;
 - `heatmap:budget` bütçe bekçisinin satırı. Hata görürsen Apify token'ı hesap kullanımını okuyamıyor; heatmap normal planla devam eder.
 - `axi:backfill` geriye doldurmanın satırı: hata görürsen `last_error` hangi dilimde nereye kadar inildiğini ve ne zaman tekrar deneneceğini söyler. Canlı dilimlerin satırları bundan ayrı.
 - `bias` satırında `last_source_time` son raporun dala düştüğü an (simülasyonda bias'ın bilindiği an). Hata varsa `last_error` dosya adını ve sebebi söyler: çekirdek alanı (bias, güven, yön, skor, tarih) geçersiz bir rapor yazılmaz; düzeltilip dala yeniden gönderilince yazılır.
+- `legacy` eski DB kopyasının satırı (yalnız `OLD_DATABASE_URL` verildiyse); `last_source_time` kopyalanan en yeni işlem güncellemesi. Bağlanamazsa `last_error` sebebi söyler.
 - Sağlıklı bir satırda (`consecutive_failures` 0) `last_error` doluysa, o geçmişte görülmüş son hatadır; `last_error_at` ne zaman olduğunu söyler.
 - `axi:*` satırlarında `last_source_time` o dilimin son kapanmış mumunun açılışı. Örneğin 1d için dünün 21:00 UTC'si (İstanbul 00:00): bugünün günlük mumu henüz oluşuyor.

@@ -8,7 +8,7 @@ Plan: proje dokümanı "Hakari 2 — Sürekli Veri Akışı Planı".
 | Yol | İçerik |
 |---|---|
 | `packages/db` | Postgres bağlantısı, migration çalıştırıcı, şema (`migrations/`) |
-| `apps/collector` | Binance L/S (5 dk), heatmap (saatlik), Axi mumları 1m–1d (dakikada bir), sembol bilgisi ve günlük bias raporları toplayıcı; açılışta migration'ları uygular |
+| `apps/collector` | Binance L/S (5 dk), heatmap (saatlik), Axi mumları 1m–1d (dakikada bir), sembol bilgisi ve günlük bias raporları toplayıcı; isteğe bağlı eski DB kopyası; açılışta migration'ları uygular |
 | `apps/core` | (sonra) göstergeler, L/S açıları, cluster'lar |
 | `apps/web` | (sonra) sağlık ve son değerler sayfası |
 

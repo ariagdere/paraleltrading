@@ -20,6 +20,13 @@ const metaapiRegion = process.env.METAAPI_REGION || 'london'
 const trimSlash = (s: string) => s.replace(/\/+$/, '')
 
 export const config = {
+  legacy: {
+    // Eski sistemin Postgres'i (DATABASE_PUBLIC_URL değeri). Boşsa kopya kapalı.
+    url: process.env.OLD_DATABASE_URL ?? '',
+    ssl: process.env.OLD_PGSSL !== 'false',
+    // Heatmap ve L/S için kopyanın başlangıcı; boşsa eski DB'de ne varsa.
+    from: process.env.LEGACY_FROM ? new Date(time('LEGACY_FROM', '')) : null,
+  },
   bias: {
     repo: process.env.BIAS_REPO || 'ariagdere/hakari-dashboard',
     branch: process.env.BIAS_BRANCH || 'bias-data',
