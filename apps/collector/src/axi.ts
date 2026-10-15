@@ -228,8 +228,69 @@ export async function backfillAxi(pool: Pool) {
   }
 }
 
-// Sembol bilgisi (digits, point, lot adımı, kontrat büyüklüğü, swap...): değiştiğinde yeni satır.
+// Boşluk denetimi: son AXI_GAP_RECHECK_HOURS içinde kayıtlı seride iki mum arasında dilimden uzun aralık varsa
+// (MetaApi o an mumu eksik vermiş olabilir) aralık MetaApi'den yeniden istenir; gelen mum yazılır. Pencereden
+// çıkana kadar gelmeyen boşluk broker'ın gerçek boşluğu sayılır (ör. kısa bakım araları). Geriye doldurma
+// sürerken çalışmaz: eski dashboard'la birlikte MetaApi'nin eşzamanlı istek sınırı aşılmasın.
+export async function auditAxiGaps(pool: Pool) {
+  if (!TIMEFRAMES.every((tf) => state(tf).done)) return
+  const source = 'axi:gaps'
+  const startedAt = new Date()
+  const windowMs = config.metaapi.gapRecheckHours * 3_600_000
+  let found = 0
+  let filled = 0
+  try {
+    for (const tf of TIMEFRAMES) {
+      const step = STEP_MS[tf]
+      const { rows: gaps } = await pool.query<{ gap_start: Date; gap_end: Date }>(
+        `SELECT gap_start, gap_end FROM (
+           SELECT open_time AS gap_start, lead(open_time) OVER (ORDER BY open_time) AS gap_end
+           FROM axi_candles WHERE symbol = $1 AND timeframe = $2 AND open_time >= $3
+         ) g WHERE gap_end - gap_start > make_interval(secs => $4) ORDER BY gap_start`,
+        [config.metaapi.symbol, tf, new Date(Date.now() - windowMs - step), step / 1000],
+      )
+      for (const g of gaps) {
+        found++
+        const missing = Math.round((g.gap_end.getTime() - g.gap_start.getTime()) / step) - 1
+        await saveClosed(pool, tf, await fetchPage(tf, Math.min(PAGE, missing + 2), g.gap_end.getTime()))
+        const { rows } = await pool.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM axi_candles
+           WHERE symbol = $1 AND timeframe = $2 AND open_time > $3 AND open_time < $4`,
+          [config.metaapi.symbol, tf, g.gap_start, g.gap_end],
+        )
+        const got = rows[0]?.n ?? 0
+        if (got > 0) {
+          filled += got
+          console.log(`[axi] ${tf}: ${iso(g.gap_start.getTime())} sonrasındaki boşluğa ${got}/${missing} mum geldi`)
+          await logRun(pool, {
+            source,
+            startedAt,
+            ok: true,
+            rowsWritten: got,
+            detail: { tf, gapStart: iso(g.gap_start.getTime()), gapEnd: iso(g.gap_end.getTime()), missing, filled: got },
+          })
+        }
+      }
+    }
+    await markOk(pool, source, '30 minutes')
+    return { found, filled }
+  } catch (err) {
+    const msg = errText(err)
+    console.error(`[axi] boşluk denetimi: ${msg}`)
+    await logRun(pool, { source, startedAt, ok: false, error: msg, detail: { found, filled } })
+    await markFail(pool, source, '30 minutes', msg)
+    return { found, filled }
+  }
+}
+
+// Sembol bilgisi (digits, point, lot adımı, kontrat büyüklüğü, swap...): değiştiğinde yeni satır. 15 dakikada bir
+// çağrılır ama MetaApi'ye yalnız son başarılı okumanın üzerinden 6 saat geçtiyse gider; hata verirse 15 dakika
+// sonra yeniden dener.
+let specOkAt = 0
+const SPEC_EVERY_MS = 6 * 3_600_000
+
 export async function syncSpec(pool: Pool) {
+  if (Date.now() - specOkAt < SPEC_EVERY_MS) return
   const source = 'axi:spec'
   const startedAt = new Date()
   try {
@@ -245,6 +306,7 @@ export async function syncSpec(pool: Pool) {
       await pool.query('INSERT INTO axi_symbol_spec (symbol, spec_hash, spec) VALUES ($1, $2, $3)', [symbol, hash, JSON.stringify(spec)])
       console.log(`[axi] ${symbol} sembol bilgisi kaydedildi`)
     }
+    specOkAt = Date.now()
     await markOk(pool, source, '6 hours')
   } catch (err) {
     const msg = errText(err)

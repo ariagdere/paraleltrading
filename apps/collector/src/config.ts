@@ -9,6 +9,15 @@ function num(name: string, fallback: number): number {
   return n
 }
 
+function list(name: string, fallback: number[]): number[] {
+  const raw = process.env[name]
+  if (raw === undefined || raw.trim() === '') return fallback
+  if (raw.trim().toLowerCase() === 'none') return [] // tekrar yok
+  const out = raw.split(',').map((s) => Number(s.trim()))
+  if (out.some((n) => !Number.isFinite(n) || n < 0)) throw new Error(`${name} virgülle ayrılmış sayılar olmalı: ${raw}`)
+  return out
+}
+
 function time(name: string, fallback: string): number {
   const raw = process.env[name] || fallback
   const t = Date.parse(raw)
@@ -50,6 +59,8 @@ export const config = {
     pagePauseMs: num('AXI_PAGE_PAUSE_MS', 2000),
     // Geriye doldurma hata verirse ilk tekrar bu kadar dakika sonra; her hatada ikiye katlanır (en çok 60).
     backfillRetryMinutes: num('AXI_BACKFILL_RETRY_MINUTES', 10),
+    // Boşluk denetimi: kayıtlı serideki delikler bu kadar saat boyunca MetaApi'den yeniden istenir.
+    gapRecheckHours: num('AXI_GAP_RECHECK_HOURS', 6),
   },
   apify: {
     token: process.env.APIFY_TOKEN ?? '',
@@ -59,6 +70,8 @@ export const config = {
     runCostUsd: num('HEATMAP_RUN_COST_USD', 0.01),
     budgetUsd: num('HEATMAP_BUDGET_USD', 28),
     waitMinutes: num('HEATMAP_WAIT_MINUTES', 15),
+    // Başarısız çalıştırmadan sonraki tekrarların bekleme süreleri (ms); eleman sayısı kadar tekrar.
+    retryDelaysMs: list('HEATMAP_RETRY_DELAYS_MS', [30_000, 90_000]),
   },
   binance: {
     baseUrl: process.env.BINANCE_FAPI_BASE_URL ?? 'https://fapi.binance.com',
