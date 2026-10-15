@@ -1,6 +1,6 @@
 # collector servisi (Railway)
 
-collector, ham verileri toplayıp Postgres'e yazan tek süreç. Şu an Binance L/S (5 dakikada bir), heatmap (12h, 24h, 48h saatte bir), Axi mumları (1m–1d, dakikada bir) ve Axi sembol bilgisini (6 saatte bir) topluyor; bias sonraki adımda. Açılışta migration'ları kendisi uygular.
+collector, ham verileri toplayıp Postgres'e yazan tek süreç. Binance L/S (5 dakikada bir), heatmap (12h, 24h, 48h saatte bir), Axi mumları (1m–1d, dakikada bir), Axi sembol bilgisi (6 saatte bir) ve günlük bias raporlarını (5 dakikada bir hakari-dashboard'un `bias-data` dalına bakar) topluyor. Açılışta migration'ları kendisi uygular.
 
 Railway, Ağustos 2026 sonundan beri yeni servislerde `railway.toml` okumuyor; ayarlar panelden girilir.
 
@@ -50,6 +50,7 @@ Yeni projede New → GitHub Repo → `ariagdere/paraleltrading`.
 | `AXI_BACKFILL_FROM` | `2026-09-18T00:00:00Z` | İlk açılışta Axi mumlarının başlangıcı; her dilimde bunun 1000 mum öncesine kadar gidilir (göstergeler ısınsın) |
 | `AXI_PAGE_PAUSE_MS` | `2000` | Geriye doldururken MetaApi sayfaları arası bekleme (istek kotası eski dashboard'la ortak) |
 | `AXI_BACKFILL_RETRY_MINUTES` | `10` | Geriye doldurma hata verirse ilk tekrar; her hatada ikiye katlanır, en çok 60 |
+| `GITHUB_TOKEN` | boş | Bias için gerekmez (repo açık). Paylaşılan Railway IP'sinde GitHub API kotası dolarsa (`bias` satırında "kotası doldu") salt okunur bir token verilebilir |
 | `HEATMAP_BUDGET_USD` | `28` | Ay sonu tahmini bunu aşarsa önce 48h, sonra 24h iki saatte bire iner |
 | `HEATMAP_RUN_COST_USD` | `0.01` | Çalıştırma başına ücret |
 | `HEATMAP_WAIT_MINUTES` | `15` | Bir çalıştırmanın bitmesi için en uzun bekleme |
@@ -77,6 +78,7 @@ Deploy loglarında sırayla:
 - Axi: ilk dakikada her dilime en yeni 999 mum yazılır (`[axi] 1m: 999 mum yazıldı`), canlı veri hemen başlar. Geçmiş, ayrı bir iş olarak dakikada bir 40 saniyelik dilimlerle geriye doldurulur (`[axi] 5m: geriye ... mum yazıldı, ... tarihine inildi`).
 - MetaApi derin geçmişi bazen zamanında getiremiyor (`Timed out waiting for bars`). O zaman `[axi] geriye doldurma 1m: ... tekrar denenecek` yazar; sayfa küçülür ve 10, 20, 40, 60 dakika arayla yeniden denenir. Canlı mumlar bundan etkilenmez.
 - MetaApi'de daha eski mum yoksa `[axi] 1m: MetaApi geçmişi ... tarihinde bitiyor` yazar; hepsi bitince `[axi] geriye doldurma tamamlandı`.
+- Bias: ilk açılışta `bias-data` dalındaki bütün raporlar yazılır (`[bias] 2026-10-15T1419.json: SHORT MEDIUM, skor -45` gibi). Sonra dal 5 dakikada bir kontrol edilir; yeni rapor gelince aynı satır düşer.
 - Heatmap ilk kez bir sonraki saat başından 30 saniye sonra çalışır; üç çalıştırma 5 dakika içinde biter.
 
 Deploy sırasında eski süreç kapanana kadar yenisi `başka bir collector çalışıyor; kilit bekleniyor` yazar; bu normal, aynı saat iki kez heatmap başlatılmasın diye.
@@ -101,10 +103,16 @@ SELECT metric, count(*), min(ts), max(ts) FROM lsr_series GROUP BY metric;
 -- Axi mum kapsamı
 SELECT timeframe, count(*), min(open_time), max(open_time), count(*) FILTER (WHERE spread_points IS NULL) AS spreadsiz
 FROM axi_candles GROUP BY timeframe ORDER BY min(open_time) DESC;
+
+-- son bias raporları
+SELECT source_file, committed_at, bias, confidence, sentiment_score, risk_regime
+FROM daily_bias ORDER BY committed_at DESC LIMIT 5;
 ```
 
 - Sağlıkta `consecutive_failures` 0 olmalı.
 - `lsr:*` satırlarında `HTTP 451` görürsen bölge uygun değil: Region'ı eski L/S servisininkine çevir.
 - `heatmap:budget` bütçe bekçisinin satırı. Hata görürsen Apify token'ı hesap kullanımını okuyamıyor; heatmap normal planla devam eder.
 - `axi:backfill` geriye doldurmanın satırı: hata görürsen `last_error` hangi dilimde nereye kadar inildiğini ve ne zaman tekrar deneneceğini söyler. Canlı dilimlerin satırları bundan ayrı.
+- `bias` satırında `last_source_time` son raporun dala düştüğü an (simülasyonda bias'ın bilindiği an). Hata varsa `last_error` dosya adını ve sebebi söyler: çekirdek alanı (bias, güven, yön, skor, tarih) geçersiz bir rapor yazılmaz; düzeltilip dala yeniden gönderilince yazılır.
+- Sağlıklı bir satırda (`consecutive_failures` 0) `last_error` doluysa, o geçmişte görülmüş son hatadır; `last_error_at` ne zaman olduğunu söyler.
 - `axi:*` satırlarında `last_source_time` o dilimin son kapanmış mumunun açılışı. Örneğin 1d için dünün 21:00 UTC'si (İstanbul 00:00): bugünün günlük mumu henüz oluşuyor.

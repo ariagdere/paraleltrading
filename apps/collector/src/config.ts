@@ -20,6 +20,16 @@ const metaapiRegion = process.env.METAAPI_REGION || 'london'
 const trimSlash = (s: string) => s.replace(/\/+$/, '')
 
 export const config = {
+  bias: {
+    repo: process.env.BIAS_REPO || 'ariagdere/hakari-dashboard',
+    branch: process.env.BIAS_BRANCH || 'bias-data',
+    dir: process.env.BIAS_DIR || 'data/daily-bias',
+    // İsteğe bağlı: repo açık, token gerekmez; verilirse GitHub API kotası yükselir.
+    token: process.env.GITHUB_TOKEN ?? '',
+    gitUrl: trimSlash(process.env.GITHUB_URL || 'https://github.com'),
+    apiUrl: trimSlash(process.env.GITHUB_API_URL || 'https://api.github.com'),
+    rawUrl: trimSlash(process.env.GITHUB_RAW_URL || 'https://raw.githubusercontent.com'),
+  },
   metaapi: {
     token: process.env.METAAPI_TOKEN ?? '',
     accountId: process.env.METAAPI_ACCOUNT_ID ?? '',
