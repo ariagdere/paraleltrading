@@ -9,9 +9,12 @@ export function createPool(connectionString = process.env.DATABASE_URL, max = 5)
   // bağlantı düşer; SSL'i burada yönetiyoruz.
   const url = new URL(connectionString)
   url.searchParams.delete('sslmode')
-  return new pg.Pool({
+  const pool = new pg.Pool({
     connectionString: url.toString(),
     max,
     ssl: useSsl ? { rejectUnauthorized: false } : undefined,
   })
+  // Boştaki bir bağlantı koparsa (veritabanı yeniden başlarsa) süreç çökmesin; sonraki sorgu yeni bağlantı açar.
+  pool.on('error', (err) => console.error(`[db] boştaki bağlantı koptu: ${err.message}`))
+  return pool
 }
