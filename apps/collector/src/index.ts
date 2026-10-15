@@ -1,7 +1,7 @@
 // collector: ham verileri toplayıp Postgres'e yazan tek süreç. Açılışta migration'ları uygular.
 // Binance L/S (5 dakikada bir), heatmap (saatte bir), Axi mumları (dakikada bir) ve sembol bilgisi (6 saatte bir).
 import { createPool, migrate, type Pool } from '@pt/db'
-import { EXPECTED_EVERY, syncAxi, syncSpec, TIMEFRAMES } from './axi.js'
+import { backfillAxi, EXPECTED_EVERY, syncAxi, syncSpec, TIMEFRAMES } from './axi.js'
 import { config } from './config.js'
 import { heatmapHour, SPANS } from './heatmap.js'
 import { syncLsr } from './lsr.js'
@@ -68,6 +68,7 @@ if (config.apify.token && config.apify.actorId) {
 if (config.metaapi.token && config.metaapi.accountId) {
   void syncSpec(pool)
   jobs.push(every('axi', MINUTE, 3_000, () => syncAxi(pool)))
+  jobs.push(every('axi-backfill', MINUTE, 30_000, () => backfillAxi(pool)))
   jobs.push(every('axi-spec', 6 * 60 * MINUTE, 7 * MINUTE, () => syncSpec(pool)))
 } else {
   console.warn('[axi] METAAPI_TOKEN ya da METAAPI_ACCOUNT_ID tanımlı değil; Axi mumları kapalı')
