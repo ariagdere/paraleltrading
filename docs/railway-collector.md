@@ -1,6 +1,6 @@
 # collector servisi (Railway)
 
-collector, ham verileri toplayıp Postgres'e yazan tek süreç. Şu an Binance L/S (5 dakikada bir) ve heatmap (12h, 24h, 48h saatte bir) topluyor; Axi mumları ve bias sonraki adımda. Açılışta migration'ları kendisi uygular.
+collector, ham verileri toplayıp Postgres'e yazan tek süreç. Şu an Binance L/S (5 dakikada bir), heatmap (12h, 24h, 48h saatte bir), Axi mumları (1m–1d, dakikada bir) ve Axi sembol bilgisini (6 saatte bir) topluyor; bias sonraki adımda. Açılışta migration'ları kendisi uygular.
 
 Railway, Ağustos 2026 sonundan beri yeni servislerde `railway.toml` okumuyor; ayarlar panelden girilir.
 
@@ -37,11 +37,18 @@ Yeni projede New → GitHub Repo → `ariagdere/paraleltrading`.
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
 | `APIFY_TOKEN` | `${{shared.APIFY_TOKEN}}` |
 | `APIFY_ACT_ID` | `${{shared.APIFY_ACT_ID}}` |
+| `METAAPI_TOKEN` | `${{shared.METAAPI_TOKEN}}` |
+| `METAAPI_ACCOUNT_ID` | `${{shared.METAAPI_ACCOUNT_ID}}` |
+
+`Postgres` yerine kanvastaki Postgres servisinin adı yazılır; değeri `${{` yazınca açılan listeden seçmek en güvenlisi. Bir değişken eksikse o kaynak kapalı kalır ve sağlık tablosunda hata olarak görünür.
 
 İsteğe bağlı; varsayılanlar yeterli:
 
 | Değişken | Varsayılan | Anlamı |
 |---|---|---|
+| `METAAPI_REGION` | `london` | MetaApi bölgesi (eski dashboard'la aynı) |
+| `AXI_BACKFILL_FROM` | `2026-09-18T00:00:00Z` | İlk açılışta Axi mumlarının başlangıcı; her dilimde bunun 1000 mum öncesine kadar gidilir (göstergeler ısınsın) |
+| `AXI_PAGE_PAUSE_MS` | `2000` | Geriye doldururken MetaApi sayfaları arası bekleme (istek kotası eski dashboard'la ortak) |
 | `HEATMAP_BUDGET_USD` | `28` | Ay sonu tahmini bunu aşarsa önce 48h, sonra 24h iki saatte bire iner |
 | `HEATMAP_RUN_COST_USD` | `0.01` | Çalıştırma başına ücret |
 | `HEATMAP_WAIT_MINUTES` | `15` | Bir çalıştırmanın bitmesi için en uzun bekleme |
@@ -58,9 +65,16 @@ Deploy loglarında sırayla:
 [collector] başladı
 [lsr] global: ... nokta yazıldı
 [lsr] top_position: ... nokta yazıldı
+[axi] BTCUSD sembol bilgisi kaydedildi
+[axi] 1m: ... mum yazıldı
+...
+[axi] 1d: ... mum yazıldı
 ```
 
-L/S ilk açılışta 18 Eylül'den bugüne doldurulur (metrik başına yaklaşık 8.000 nokta). Heatmap ilk kez bir sonraki saat başından 30 saniye sonra çalışır; üç çalıştırma 5 dakika içinde biter.
+- İlk satır, şema elle (DBeaver) kurulduysa ilk açılışta `uygulandı: 001_ham_veri.sql` olur; tablolara dokunmaz, yalnız kaydını tutar.
+- L/S ilk açılışta 18 Eylül'den bugüne doldurulur (metrik başına yaklaşık 8.000 nokta).
+- Axi mumları ilk dakikada geriye doldurulur: 1m için yaklaşık 40 sayfa, toplam 60 civarı istek, birkaç dakika. Bu sürede `[axi] önceki tur sürüyor, bu tur atlandı` satırları normal. MetaApi'nin geçmişi hedefe yetmezse `[axi] 1m: MetaApi geçmişi ... tarihinde bitiyor` yazar.
+- Heatmap ilk kez bir sonraki saat başından 30 saniye sonra çalışır; üç çalıştırma 5 dakika içinde biter.
 
 Deploy sırasında eski süreç kapanana kadar yenisi `başka bir collector çalışıyor; kilit bekleniyor` yazar; bu normal, aynı saat iki kez heatmap başlatılmasın diye.
 
@@ -80,8 +94,13 @@ FROM collector_runs ORDER BY id DESC LIMIT 10;
 
 -- L/S kapsamı
 SELECT metric, count(*), min(ts), max(ts) FROM lsr_series GROUP BY metric;
+
+-- Axi mum kapsamı
+SELECT timeframe, count(*), min(open_time), max(open_time), count(*) FILTER (WHERE spread_points IS NULL) AS spreadsiz
+FROM axi_candles GROUP BY timeframe ORDER BY min(open_time) DESC;
 ```
 
 - Sağlıkta `consecutive_failures` 0 olmalı.
 - `lsr:*` satırlarında `HTTP 451` görürsen bölge uygun değil: Region'ı eski L/S servisininkine çevir.
 - `heatmap:budget` bütçe bekçisinin satırı. Hata görürsen Apify token'ı hesap kullanımını okuyamıyor; heatmap normal planla devam eder.
+- `axi:*` satırlarında `last_source_time` o dilimin son kapanmış mumunun açılışı. Örneğin 1d için dünün 21:00 UTC'si (İstanbul 00:00): bugünün günlük mumu henüz oluşuyor.

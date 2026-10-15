@@ -16,7 +16,22 @@ function time(name: string, fallback: string): number {
   return t
 }
 
+const metaapiRegion = process.env.METAAPI_REGION || 'london'
+const trimSlash = (s: string) => s.replace(/\/+$/, '')
+
 export const config = {
+  metaapi: {
+    token: process.env.METAAPI_TOKEN ?? '',
+    accountId: process.env.METAAPI_ACCOUNT_ID ?? '',
+    symbol: process.env.AXI_SYMBOL || 'BTCUSD',
+    marketDataUrl: trimSlash(
+      process.env.METAAPI_MARKET_DATA_URL || `https://mt-market-data-client-api-v1.${metaapiRegion}.agiliumtrade.ai`,
+    ),
+    clientUrl: trimSlash(process.env.METAAPI_CLIENT_API_URL || `https://mt-client-api-v1.${metaapiRegion}.agiliumtrade.ai`),
+    backfillFrom: time('AXI_BACKFILL_FROM', '2026-09-18T00:00:00Z'),
+    // Geriye doldururken sayfalar arası bekleme: MetaApi istek kotası eski dashboard'la ortak.
+    pagePauseMs: num('AXI_PAGE_PAUSE_MS', 2000),
+  },
   apify: {
     token: process.env.APIFY_TOKEN ?? '',
     // API yolunda "kullanıcı/aktör" yerine "kullanıcı~aktör" kullanılır.

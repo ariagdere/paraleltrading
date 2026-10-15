@@ -1,6 +1,7 @@
 // collector: ham verileri toplayıp Postgres'e yazan tek süreç. Açılışta migration'ları uygular.
-// Şimdilik: Binance L/S (5 dakikada bir) ve heatmap (saatte bir). Axi mumları ve bias sonraki adımda.
-import { createPool, migrate } from '@pt/db'
+// Binance L/S (5 dakikada bir), heatmap (saatte bir), Axi mumları (dakikada bir) ve sembol bilgisi (6 saatte bir).
+import { createPool, migrate, type Pool } from '@pt/db'
+import { EXPECTED_EVERY, syncAxi, syncSpec, TIMEFRAMES } from './axi.js'
 import { config } from './config.js'
 import { heatmapHour, SPANS } from './heatmap.js'
 import { syncLsr } from './lsr.js'
@@ -12,10 +13,21 @@ import { markFail } from './status.js'
 const COLLECTOR_LOCK = 72026102
 const MINUTE = 60_000
 
-const pool = createPool()
-await migrate(pool)
+// Ayar hatalarında yığın dökümü yerine tek satır (Railway loglarında okunur kalsın).
+function fatal(err: unknown): never {
+  console.error(`[collector] başlatılamadı: ${(err as Error).message}`)
+  process.exit(1)
+}
 
-const lock = await pool.connect()
+let pool: Pool
+try {
+  pool = createPool()
+} catch (err) {
+  fatal(err)
+}
+await migrate(pool).catch(fatal)
+
+const lock = await pool.connect().catch(fatal)
 lock.on('error', (err) => {
   console.error(`[collector] kilit bağlantısı koptu, yeniden başlatılıyor: ${err.message}`)
   process.exit(1)
@@ -51,4 +63,15 @@ if (config.apify.token && config.apify.actorId) {
 } else {
   console.warn('[heatmap] APIFY_TOKEN ya da APIFY_ACT_ID tanımlı değil; heatmap kapalı')
   for (const span of SPANS) await markFail(pool, `heatmap:${span}`, '1 hour', 'APIFY_TOKEN ya da APIFY_ACT_ID tanımlı değil')
+}
+
+if (config.metaapi.token && config.metaapi.accountId) {
+  void syncSpec(pool)
+  jobs.push(every('axi', MINUTE, 3_000, () => syncAxi(pool)))
+  jobs.push(every('axi-spec', 6 * 60 * MINUTE, 7 * MINUTE, () => syncSpec(pool)))
+} else {
+  console.warn('[axi] METAAPI_TOKEN ya da METAAPI_ACCOUNT_ID tanımlı değil; Axi mumları kapalı')
+  for (const tf of TIMEFRAMES) {
+    await markFail(pool, `axi:${tf}`, EXPECTED_EVERY[tf], 'METAAPI_TOKEN ya da METAAPI_ACCOUNT_ID tanımlı değil')
+  }
 }
