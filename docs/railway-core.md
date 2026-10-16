@@ -1,11 +1,10 @@
 # core servisi (Railway)
 
-core, collector'ın yazdığı ham verilerden hesaplanan değerleri üretip aynı Postgres'e yazan ikinci süreç. İki hesap yapıyor:
+core, collector'ın yazdığı ham verilerden hesaplanan değerleri üretip aynı Postgres'e yazan ikinci süreç. Üç hesap yapıyor:
 
 - **Axi göstergeleri** (`axi_indicators`): ZLEMA bölgesi, RSI 14 ve ATR 14; 15m, 1h, 4h ve 1d dilimlerinde her kapanmış mum için.
 - **Heatmap seviyeleri** (`heatmap_levels`): her heatmap snapshot'ı (12h, 24h, 48h) için her yönde en çok 3 cluster, %1/2/3 bant likiditesi ve heatmap fiyatı ile Axi fiyatı arasındaki baz.
-
-L/S açıları sonraki PR'la gelecek.
+- **L/S açıları** (`lsr_angles`): global ve TT pozisyon oranı için 5m, 15m, 1h ve 4h dilimlerinde serinin her noktasında açı.
 
 collector'la aynı repodan ikinci bir servis: kod aynı, başlatma komutu ve izlenen yollar farklı. Böylece core'a gelen bir değişiklik collector'ı yeniden başlatmaz, core'daki bir hata da veri toplamayı durdurmaz. İkisi aynı Postgres'i kullanır.
 
@@ -51,12 +50,15 @@ Başka değişken gerekmiyor; core dış servislere bağlanmıyor. `Postgres` ye
 [core] 4h: ... mum hesaplandı, ... satır yazıldı
 [core] 1d: ... mum hesaplandı, ... satır yazıldı
 [core] heatmap: ... snapshot hesaplandı
+[core] L/S açıları (global): ... satır yazıldı
+[core] L/S açıları (top_position): ... satır yazıldı
 ```
 
 - `003_gostergeler.sql` migration'ını hangi servis önce açılırsa o uygular. Bu PR `packages/db`'yi değiştirdiği için collector da yeniden başlar ve büyük ihtimalle 003'ü o uygular (`uygulandı: 003_gostergeler.sql`); core sonra açılınca "şema güncel" yazar.
 - İlk hesap bütün geçmişi birkaç saniyede bitirir. Sonra dakikada bir (saniye 20, collector'ın mum turundan sonra) yeni ya da düzeltilmiş mumlar işlenir; tek mumluk güncellemelerde log satırı düşmez.
 - collector bir mumu düzeltirse ya da boşluk denetimi araya mum eklerse, o mumdan sonrası yeniden hesaplanır ve yalnız değişen satırlar yazılır (`[core] 1h: 643 mum hesaplandı, 455 satır yazıldı` gibi).
 - Heatmap seviyeleri ilk açılışta bütün snapshot'lar için hesaplanır: eski sistemden kopyalanan 12h'ler ve collector'ın yazdıkları (yaklaşık 900). Sonra her yeni snapshot bir sonraki dakika işlenir.
+- L/S açıları ilk açılışta bütün seri için hesaplanır (metrik başına ~18 bin satır, bir saniye kadar). Sonra yeni 5m noktası geldikçe (5 dakikada bir) yalnız yeni satırlar yazılır.
 - Beklenmeyen biçimde bir snapshot olursa `[core] heatmap 123 (12h): seviye çıkmadı` yazar; o snapshot boş satırla işaretlenir, yeniden denenmez.
 - Deploy sırasında eski süreç kapanana kadar yenisi `başka bir core çalışıyor; kilit bekleniyor` yazar.
 
@@ -91,6 +93,21 @@ Her snapshot için bir satır; değer snapshot'ın `received_at` anında bilinir
 - 2. ve 3. cluster tepe seviyesine göre sıralı. Çok seviyeli bir kümenin toplamı tek büyük seviyeden oluşan 1. cluster'ınkini geçebilir.
 - Axi 1m mumu o an yoksa (MetaApi geç verdiyse) `axi_price` ve `basis` boş kalır; son bir günün satırlarında mum gelince doldurulur. Axi 1m serisi 17 Eylül'de başladığı için eski sistemden kopyalanan daha eski 12h'lerde baz yok.
 
+### L/S açıları (`lsr_angles`)
+
+Formül eski sistemin (hakari-lsr-refresher `lsrAngle.js`); her metrik (`global`, `top_position`) ve dilim için serinin her noktasında biten 30 noktalık pencere:
+
+| Sütun | Hesap |
+|---|---|
+| `slope` | Pencerenin ortalamaya göre normalize değerlerine x = 0…1 doğrusu oturtulur; eğim pencere boyunca toplam normalize değişim |
+| `r2` | Uyumun güvenilirliği (0–1) |
+| `ref`, `n_ref` | O noktaya kadarki bütün geçerli pencerelerin \|eğim\| değerlerinin %90'lık değeri ve pencere sayısı |
+| `angle` | atan(slope / ref), derece. `n_ref` 100'den azsa ya da pencerede eksik nokta varsa boş |
+
+- 15m, 1h ve 4h serileri 5m serisinden alınıyor: dilim sınırındaki (UTC) 5m noktaları. Binance'in 1h noktası aynı andaki 5m noktasıyla birebir aynı (eski verideki 1.030 saatin hepsi).
+- Referans serinin başından bütün pencerelere bağlı. Seri 30 Ağustos'ta başladığı için ilk açı 5m'de ~11 saat, 15m'de ~32 saat, 1h'de ~5 gün, 4h'de ~21 gün sonra; 18 Eylül'den sonra dört dilimde de açı var.
+- Eski sistem `t` anındaki açıyı ts ≤ t − dilim olan son noktadan alıyordu (lag 1). O nokta t − dilim'den iki dilim ya da daha eskiyse açı yok sayılıyordu. Aşağıdaki sorgu bunu yapıyor.
+
 ## 6. DBeaver'da kontrol
 
 ```sql
@@ -112,6 +129,19 @@ SELECT l.span, l.received_at AT TIME ZONE 'Europe/Istanbul' AS geldi, round(l.re
        round(l.dn1_price::numeric) AS alt, round((l.dn1_usd / 1e6)::numeric, 1) AS alt_m
 FROM heatmap_levels l ORDER BY l.snapshot_id DESC LIMIT 6;
 
+-- son L/S açıları (İstanbul saati)
+SELECT metric, period, ts AT TIME ZONE 'Europe/Istanbul' AS nokta, round(angle::numeric, 1) AS aci, round(r2::numeric, 2) AS r2
+FROM lsr_angles a
+WHERE ts = (SELECT max(ts) FROM lsr_angles WHERE metric = a.metric AND period = a.period)
+ORDER BY metric, period;
+
+-- eski sistemin bir andaki açısı (lag 1): örnek 1h global, 16 Ekim 10:30 İstanbul
+SELECT round(angle::numeric, 2) AS aci FROM lsr_angles
+WHERE metric = 'global' AND period = '1h'
+  AND ts <= timestamptz '2026-10-16 10:30+03' - interval '1 hour'
+  AND ts > timestamptz '2026-10-16 10:30+03' - interval '1 hour' - interval '2 hours'
+ORDER BY ts DESC LIMIT 1;
+
 -- sağlık
 SELECT source, last_success_at, last_source_time, consecutive_failures, last_error
 FROM collector_status WHERE source LIKE 'core:%' ORDER BY source;
@@ -119,4 +149,5 @@ FROM collector_status WHERE source LIKE 'core:%' ORDER BY source;
 
 - `core:15m` … `core:1d` satırlarında `last_source_time`, o dilimde göstergesi hesaplanmış son mumun açılışı. collector'ın aynı dilimdeki `axi:*` satırıyla aynı olmalı; en çok bir dakika geride kalabilir.
 - `core:heatmap` satırında `last_source_time`, seviyesi hesaplanmış son snapshot'ın `received_at`'i.
+- `core:lsr` satırında `last_source_time`, açısı hesaplanmış son L/S noktası; collector'ın `lsr:*` satırlarıyla aynı olmalı (en çok bir dakika geride).
 - Hata görürsen `last_error` sebebi söyler; bir sonraki dakika yeniden dener.
