@@ -3,7 +3,7 @@
 core, collector'ın yazdığı ham verilerden hesaplanan değerleri üretip aynı Postgres'e yazan ikinci süreç. Dört hesap yapıyor:
 
 - **Axi göstergeleri** (`axi_indicators`): ZLEMA bölgesi, RSI 14 ve ATR 14; 15m, 1h, 4h ve 1d dilimlerinde her kapanmış mum için.
-- **Destek/direnç bölgeleri** (`sr_zones`, `sr_zone_events`): Axi 4h ve 1d mumlarından; her bölgenin oluştuğu ve bittiği an, bandı, puanı, hangi dilimlerden geldiği ve olayları (test, tuttu, kırıldı). Her 4h kapanışında.
+- **Destek/direnç bölgeleri** (`sr_zones`, `sr_zone_events`): Axi 4h ve 1d mumlarından; her bölgenin belirdiği ve bittiği an, sabit bandı, gücü, hangi dilimlerden geldiği, olayları (test, tuttu, kırıldı) ve ekranda gösterilip gösterilmediği. Her 4h kapanışında.
 - **Heatmap seviyeleri** (`heatmap_levels`): her heatmap snapshot'ı (12h, 24h, 48h) için her yönde en çok 3 cluster, %1/2/3 bant likiditesi ve heatmap fiyatı ile Axi fiyatı arasındaki baz.
 - **L/S açıları** (`lsr_angles`): global ve TT pozisyon oranı için 5m, 15m, 1h ve 4h dilimlerinde serinin her noktasında açı.
 
@@ -80,28 +80,29 @@ Başka değişken gerekmiyor; core dış servislere bağlanmıyor. `Postgres` ye
 
 ### Destek/direnç bölgeleri (`sr_zones`, `sr_zone_events`)
 
-Bölge, fiyatın birçok kez döndüğü ya da kapandığı fiyat aralığı. Hesap 4h kapanışlarında ve yalnız o ana kadar bilinenle yapılır; bölgenin oluşma ve bitiş anı da, olayların anı da o anda bilinen bir 4h kapanışı.
+Bölge, fiyatın birçok kez döndüğü ya da kapandığı fiyat aralığı. Hesap 4h kapanışlarında ve yalnız o ana kadar bilinenle yapılır; bölgenin belirme ve bitiş anı da, olayların anı da o anda bilinen bir 4h kapanışı. Sürüm `v3` (16 Ekim).
 
 - **İzler:**
   - 4h dönüş noktaları: iki yanında 2 mum daha uç değil ve 12 mum içinde en az 1 ATR(4h) tepki var. Fiyat dönüşten 1 ATR uzaklaştığı 4h kapanışında bilinir, en erken iki mum sonra. Ağırlık 1.
   - Günlük tepe, dip ve kapanış: ağırlık her biri 0,5, gün kapanışında.
   - Haftalık tepe, dip ve kapanış: ağırlık her biri 1,5, hafta kapanışında. Hafta pazartesi 00:00 İstanbul'da başlar.
   - İzler yarı ömürle zayıflar: 4h'de 21 gün, günlükte 30 gün, haftalıkta 120 gün.
-- **Bölge:** izlerin fiyat ekseninde yoğunlaştığı yer (her iz 0,15 ATR genişliğinde bir çan eğrisi). Bant tepenin %60'ına kadar uzanır, yarı genişlik 0,08–0,5 ATR. Puan, bandındaki izlerin o anki ağırlıkları toplamı.
+- **Bölge:** izlerin fiyat ekseninde yoğunlaştığı yer (her iz 0,10 ATR genişliğinde bir çan eğrisi). Bant tepenin %60'ına kadar uzanır, yarı genişlik 0,08–0,5 ATR. **Bant belirdiği anda belirlenir ve bir daha değişmez.** Güç, kendi bandındaki izlerin o anki ağırlıkları toplamı.
 - **Yaşam:**
-  - Yeni bölge puan ≥ 3 ile açılır; iki bölgenin merkezleri arasında en az 0,8 ATR olur.
-  - Bölge, kendi bandının puanı 2'nin altına inince (`izler zayıfladı`) ya da daha güçlü bir bölgeyle örtüşünce biter.
+  - Yeni bölge güç ≥ 3 ile açılır; iki bölgenin merkezleri arasında en az 0,8 ATR olur.
+  - Bölge, kendi bandının gücü 2'nin altına inince (`izler zayıfladı`) ya da daha güçlü bir bölgeyle örtüşünce biter.
   - Kırılma bölgeyi bitirmez, rolünü çevirir: destek dirence döner.
+- **Gösterilecekler:** her 4h kapanışında, fiyatın ±%5'inde üstte ve altta en güçlü 3 bölge ve fiyatın içinde olduğu bölge. Gösterilen bir bölgenin yerine ancak iki kat güçlü bir bölge geçer; böylece küme her kapanışta yer değiştirmez (gösterilen kümeye günde ortalama 2 bölge girip çıkıyor).
 
 | Tablo | İçerik |
 |---|---|
-| `sr_zones` | Bölgenin son durumu: `created_at`, `ended_at` (sürüyorsa boş), `end_reason`, son bant `lo`–`hi`, `score` ve dilimlere dağılımı (`score_4h`, `score_1d`, `score_1w`), `touches`, `holds`, `breaks`, puan geçmişi (`score_at`, `score_value`: oluşunca ve %15'ten çok değişince) |
-| `sr_zone_events` | Olaylar sırayla (`seq`): `created`; `resized` (bant 0,25 ATR'den çok değişti); `touch` (en az 0,6 ATR uzaktan gelip banda girdi); `hold` (testten sonra aynı yana 1 ATR uzaklaştı); `break` (bandın 0,15 ATR ötesinde kapandı); `ended`. Her olayda o anki fiyat, bant ve puan |
-| `sr_versions` | Algoritma ve parametre sürümü (`v2`) ve parametreleri |
+| `sr_zones` | Bölgenin son durumu: `created_at` (belirdiği an), `ended_at` (sürüyorsa boş), `end_reason`, bant `lo`–`hi`, `score` (güç) ve dilimlere dağılımı (`score_4h`, `score_1d`, `score_1w`), `touches`, `holds`, `breaks`, `shown` (şu an gösterilenlerden), güç geçmişi (`score_at`, `score_value`: belirince ve %15'ten çok değişince) |
+| `sr_zone_events` | Olaylar sırayla (`seq`): `created`; `touch` (en az 0,6 ATR uzaktan gelip banda girdi); `hold` (testten sonra aynı yana 1 ATR uzaklaştı); `break` (bandın 0,15 ATR ötesinde kapandı); `shown` ve `hidden` (gösterilenlere girdi, çıktı); `ended`. Her olayda o anki fiyat, bant ve güç |
+| `sr_versions` | Algoritma ve parametre sürümü ve parametreleri |
 
-- Bir bölgenin bandı ve puanı zamanla değişir; belli bir andaki hali o andan önceki son olaydadır (aşağıdaki sorgu).
+- v2'nin satırları (bant zamanla değişiyordu, `resized` olayları) olduğu gibi duruyor; web en yeni sürümü okur.
 - Algoritma ya da parametre değişince yeni sürüm açılır. Eski sürümün satırları olduğu gibi kalır.
-- Prototip ve ölçümler: proje dokümanı "Destek/direnç bölgeleri — prototip ve kararlar".
+- Prototip, v2 teşhisi ve v3 ölçümleri: proje dokümanı "Destek/direnç bölgeleri — prototip ve kararlar".
 
 ### Heatmap seviyeleri (`heatmap_levels`)
 
@@ -151,26 +152,26 @@ ORDER BY timeframe;
 SELECT open_time AT TIME ZONE 'Europe/Istanbul' AS acilis, zlema_zone, round(rsi14::numeric, 1) AS rsi
 FROM axi_indicators WHERE timeframe = '4h' ORDER BY open_time DESC LIMIT 12;
 
--- geçerli destek/direnç bölgeleri, yukarıdan aşağı (İstanbul saati)
-SELECT zone_id, round(lo::numeric) AS alt, round(hi::numeric) AS ust, round(score::numeric, 1) AS puan,
-       round(score_4h::numeric, 1) AS p4h, round(score_1d::numeric, 1) AS p1d, round(score_1w::numeric, 1) AS p1w,
-       created_at AT TIME ZONE 'Europe/Istanbul' AS olustu, touches AS test, holds AS tuttu, breaks AS kirildi
-FROM sr_zones WHERE version = 'v2' AND ended_at IS NULL ORDER BY hi DESC;
+-- gösterilen destek/direnç bölgeleri, yukarıdan aşağı (İstanbul saati); shown koşulunu kaldırınca bütün geçerliler
+SELECT zone_id, round(lo::numeric) AS alt, round(hi::numeric) AS ust, round(score::numeric, 1) AS guc,
+       round(score_4h::numeric, 1) AS g4h, round(score_1d::numeric, 1) AS g1d, round(score_1w::numeric, 1) AS g1w,
+       created_at AT TIME ZONE 'Europe/Istanbul' AS belirdi, touches AS test, holds AS tuttu, breaks AS kirildi
+FROM sr_zones WHERE version = 'v3' AND ended_at IS NULL AND shown ORDER BY hi DESC;
 
 -- son destek/direnç olayları
 SELECT e.at AT TIME ZONE 'Europe/Istanbul' AS an, e.zone_id, e.kind, round(e.price::numeric) AS fiyat,
        round(e.lo::numeric) AS alt, round(e.hi::numeric) AS ust, e.note
-FROM sr_zone_events e WHERE e.version = 'v2' ORDER BY e.at DESC, e.zone_id, e.seq DESC LIMIT 20;
+FROM sr_zone_events e WHERE e.version = 'v3' ORDER BY e.at DESC, e.zone_id, e.seq DESC LIMIT 20;
 
--- bir andaki bölgeler ve o anki bantları: örnek 12 Ekim 16:00 İstanbul
-SELECT z.zone_id, round(e.lo::numeric) AS alt, round(e.hi::numeric) AS ust, round(e.score::numeric, 1) AS olaydaki_puan
+-- bir anda gösterilen bölgeler (bant sabit): örnek 12 Ekim 16:00 İstanbul
+SELECT z.zone_id, round(z.lo::numeric) AS alt, round(z.hi::numeric) AS ust, round(e.score::numeric, 1) AS gosterildigindeki_guc
 FROM sr_zones z
-JOIN LATERAL (SELECT lo, hi, score FROM sr_zone_events
-              WHERE symbol = z.symbol AND version = z.version AND zone_id = z.zone_id AND at <= timestamptz '2026-10-12 16:00+03'
-              ORDER BY seq DESC LIMIT 1) e ON true
-WHERE z.version = 'v2' AND z.created_at <= timestamptz '2026-10-12 16:00+03'
-  AND (z.ended_at IS NULL OR z.ended_at > timestamptz '2026-10-12 16:00+03')
-ORDER BY e.hi DESC;
+JOIN LATERAL (SELECT kind, score FROM sr_zone_events
+              WHERE symbol = z.symbol AND version = z.version AND zone_id = z.zone_id AND kind IN ('shown', 'hidden', 'ended')
+                AND at <= timestamptz '2026-10-12 16:00+03'
+              ORDER BY seq DESC LIMIT 1) e ON e.kind = 'shown'
+WHERE z.version = 'v3'
+ORDER BY z.hi DESC;
 
 -- son heatmap seviyeleri (İstanbul saati)
 SELECT l.span, l.received_at AT TIME ZONE 'Europe/Istanbul' AS geldi, round(l.ref_price::numeric) AS ref,

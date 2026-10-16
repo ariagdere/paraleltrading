@@ -21,7 +21,7 @@ import { CHART_TFS, TF_MS, type CandleRow, type ChartTf, type ChartTokens, type 
 import type { HeatView, Span } from '@/lib/market-data'
 import { HeatLevels, PrevList, ZoneList } from './details'
 import { dmh, fmt1, fmtP, hm, usd } from './format'
-import { HeatLayer, TimeAxis, ZoneLayer, bandAt, rgba, type ZoneView } from './layers'
+import { HeatLayer, TimeAxis, ZoneLayer, bandAt, rgba } from './layers'
 import s from './price-chart.module.css'
 
 // Temel fiyat grafiği: Axi mumları (5m–1d, sürükleyerek geçmişe kaydırılır, tekerlekle yakınlaştırılır) ve
@@ -39,8 +39,8 @@ const LOAD = 600 // bir okumada mum
 const SPANS: Span[] = ['12h', '24h', '48h']
 
 type LayerKey = 'heat' | 'clusters' | 'zones' | 'prev'
-type Prefs = { tf: ChartTf; span: Span; layers: Record<LayerKey, boolean>; ended: boolean }
-const DEFAULT_PREFS: Prefs = { tf: '15m', span: '24h', layers: { heat: true, clusters: true, zones: true, prev: false }, ended: false }
+type Prefs = { tf: ChartTf; span: Span; layers: Record<LayerKey, boolean> }
+const DEFAULT_PREFS: Prefs = { tf: '15m', span: '24h', layers: { heat: true, clusters: true, zones: true, prev: false } }
 const PREFS_KEY = 'hakari2.piyasa.grafik.v1'
 const LAYERS: Array<[LayerKey, string, keyof typeof s]> = [
   ['heat', 'Heatmap', 'markHeat'],
@@ -59,7 +59,6 @@ function readPrefs(): Prefs {
       tf: (CHART_TFS as readonly string[]).includes(raw.tf) ? raw.tf : DEFAULT_PREFS.tf,
       span: SPANS.includes(raw.span) ? raw.span : DEFAULT_PREFS.span,
       layers,
-      ended: raw.ended === true,
     }
   } catch {
     return DEFAULT_PREFS
@@ -242,7 +241,7 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
       }
       if (L.zones) {
         const z = zonesRef.current.find((x) => {
-          if (x.endedAt !== null && !prefsRef.current.ended) return false
+          if (!x.shown) return false
           const b = bandAt(x, tReal)
           return b !== null && at >= b[0] && at <= b[1]
         })
@@ -251,7 +250,7 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
           const box = document.createElement('div')
           box.className = s.tipZone!
           add(box, 'bölge', `${fmtP.format(b[0])}–${fmtP.format(b[1])}`, true)
-          add(box, 'puan', fmt1.format(z.score))
+          add(box, 'güç', fmt1.format(z.score))
           add(box, 'test, tuttu, kırıldı', `${z.touches}, ${z.holds}, ${z.breaks}`)
           el.append(box)
         }
@@ -286,7 +285,13 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
         rightOffset: 8,
         tickMarkFormatter: (t: Time, type: TickMarkType) => {
           const ms = Number(t) * 1000
-          return type === TickMarkType.Year ? fYear.format(ms) : type === TickMarkType.Month ? fMonth.format(ms) : type === TickMarkType.DayOfMonth ? fDay.format(ms) : fTime.format(ms)
+          return type === TickMarkType.Year
+            ? fYear.format(ms)
+            : type === TickMarkType.Month
+              ? fMonth.format(ms)
+              : type === TickMarkType.DayOfMonth
+                ? fDay.format(ms)
+                : fTime.format(ms)
         },
       },
       crosshair: {
@@ -314,6 +319,9 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
     hl.font = font
     const zl = new ZoneLayer(axis.current)
     zl.color = C.zone
+    zl.text = C.text
+    zl.bg = C.surface
+    zl.font = font
     se.attachPrimitive(hl)
     se.attachPrimitive(zl)
     chart.current = ch
@@ -433,23 +441,17 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
     heatLayer.current?.setVisible(prefs.layers.heat)
   }, [prefs.layers.heat])
 
-  // Bölgeler: fiyatın hemen üstündeki ve altındaki geçerli bölge (ve içindeki) belirgin.
-  const zoneViews = useMemo((): ZoneView[] => {
-    const ref = price ?? rows.current[rows.current.length - 1]?.[4] ?? null
-    const active = zones.filter((z) => z.endedAt === null)
-    const near = new Set<number>()
-    if (ref !== null) {
-      const up = active.filter((z) => z.lo > ref).sort((a, b) => a.lo - b.lo)[0]
-      const dn = active.filter((z) => z.hi < ref).sort((a, b) => b.hi - a.hi)[0]
-      for (const z of [up, dn, ...active.filter((x) => x.lo <= ref && x.hi >= ref)]) if (z) near.add(z.id)
-    }
-    return zones
-      .filter((z) => z.endedAt === null || prefs.ended)
-      .map((z) => ({ ...z, emphasis: z.endedAt !== null ? 'ended' : near.has(z.id) ? 'near' : 'active' }))
-  }, [zones, price, prefs.ended])
+  // Bölgeler: yalnız core'un gösterdikleri; güç yazısı heatmap profilinin solunda.
+  const shownZones = useMemo(() => zones.filter((z) => z.shown), [zones])
   useEffect(() => {
-    zoneLayer.current?.setZones(zoneViews)
-  }, [zoneViews])
+    zoneLayer.current?.setZones(shownZones)
+  }, [shownZones])
+  useEffect(() => {
+    const zl = zoneLayer.current
+    if (!zl) return
+    zl.labelInset = prefs.layers.heat && heat?.grid ? 122 : 8
+    zl.update()
+  }, [prefs.layers.heat, heat])
   useEffect(() => {
     zoneLayer.current?.setVisible(prefs.layers.zones)
   }, [prefs.layers.zones])
@@ -644,7 +646,7 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
         {count === 0 && <p className={s.empty}>Bu dilimde henüz mum yok.</p>}
       </div>
       <div className={s.details}>
-        {prefs.layers.zones && <ZoneList zones={zones} price={price} showEnded={prefs.ended} onShowEnded={(v) => setPrefs((p) => ({ ...p, ended: v }))} />}
+        {prefs.layers.zones && <ZoneList zones={shownZones} price={price} />}
         {wantHeat && heat && <HeatLevels view={heat} price={price} clusters={prefs.layers.clusters} />}
         {wantHeat && !heat && !heatBusy && <p className={s.muted}>Bu pencerede heatmap snapshot&apos;ı yok.</p>}
         {prefs.layers.prev && <PrevList prev={prev} price={price} />}

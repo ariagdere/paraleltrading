@@ -5,17 +5,25 @@
 //   günlük tepe, dip ve kapanışlar, haftalık tepe, dip ve kapanışlar.
 // Her iz bilindiği andan (dönüşün onaylandığı, günün ya da haftanın kapandığı an) itibaren sayılır ve zamanla
 // zayıflar (yarı ömür). Fiyat ekseninde izlerin yoğunluğu hesaplanır; yoğunluğun tepeleri bölgelerdir.
-// Kırılma (kapanış bandın öbür yanında) bölgeyi bitirmez, rolünü çevirir; breakWear < 1 ise bant içindeki izler
-// de aşınır (varsayılan 1: aşınma yok). Bölge, kendi bandının puanı sürdürme eşiğinin altına inince ya da daha
-// güçlü bir bölgeyle örtüşünce biter.
+// Bölgenin bandı oluştuğu anda belirlenir ve bir daha değişmez; gücü her zaman kendi bandındaki izlerin o anki
+// ağırlığıdır. Kırılma (kapanış bandın öbür yanında) bölgeyi bitirmez, rolünü çevirir; breakWear < 1 ise bant
+// içindeki izler de aşınır (varsayılan 1: aşınma yok). Bölge, kendi bandının puanı sürdürme eşiğinin altına inince
+// ya da daha güçlü bir bölgeyle örtüşünce biter.
 //
 // Hesap 4h kapanışlarında, yalnız o ana kadar bilinenle yapılır (as-of). Ardışık hesaplarda örtüşen bölgeler aynı
-// bölgedir; böylece her bölgenin oluştuğu, değiştiği ve bittiği an ve aradaki testler kayda geçer.
-// Prototip (16 Ekim): Ari'nin 12 Ekim Binance 4h çizimindeki 8 bölgenin 6'sı; ölçümler proje dokümanında
-// (claude/destek-direnc-prototipi.md).
+// bölgedir; böylece her bölgenin oluştuğu ve bittiği an ve aradaki testler kayda geçer.
+//
+// Gösterilecekler de her 4h kapanışında seçilir: fiyatın ±showWindowPct'sinde, üstte ve altta en güçlü showN bölge
+// ve fiyatın içinde olduğu bölge. Gösterilen bir bölgenin yerine ancak (1 + showHys) kat güçlü bir bölge geçer;
+// böylece küme her kapanışta yer değiştirmez.
+//
+// v2'den farkı (16 Ekim, Ari "bölgeler genişleyip daralıyor, fiyat aralığının her yeri bölge"): bant sabit (v2'de
+// bölgelerin yarısının bandı ömrü boyunca değişiyordu), çekirdek 0,15 yerine 0,10 ATR (bantlar daha dar: ±%5
+// aralığın %38'i yerine gösterilenlerle %18–20'si kaplı) ve ekranda yalnız 3 + 3 bölge. Ari'nin 12 Ekim çizimiyle o
+// an gösterilen 6 bölgeden 4–5'i aynı; ölçümler proje dokümanında (claude/destek-direnc-prototipi.md).
 
 // Algoritma ya da DEFAULTS değişince sürüm de değişmeli (kayıtlar sürümle tutulur).
-export const SR_VERSION = 'v2'
+export const SR_VERSION = 'v3'
 
 export type Candle = { t: number; o: number; h: number; l: number; c: number }
 
@@ -42,6 +50,9 @@ export type Params = {
   touchAwayAtr: number // iki test arasında en az bu kadar uzaklaşma
   holdAtr: number // testten sonra bu kadar uzaklaşırsa "tuttu"
   windowPct: number // hesap fiyatın ± bu yüzdesinde
+  showN: number // fiyatın üstünde ve altında gösterilecek bölge
+  showWindowPct: number // gösterilecekler fiyatın ± bu yüzdesinden
+  showHys: number // gösterilen bölgenin yerine ancak (1 + showHys) kat güçlü bölge geçer
 }
 
 export const DEFAULTS: Params = {
@@ -55,7 +66,7 @@ export const DEFAULTS: Params = {
   hl4: 21,
   hl1d: 30,
   hl1w: 120,
-  sigmaAtr: 0.15,
+  sigmaAtr: 0.1,
   edge: 0.6,
   maxHalfWidthAtr: 0.5,
   minHalfWidthAtr: 0.08,
@@ -67,12 +78,15 @@ export const DEFAULTS: Params = {
   touchAwayAtr: 0.6,
   holdAtr: 1.0,
   windowPct: 15,
+  showN: 3,
+  showWindowPct: 5,
+  showHys: 1,
 }
 
 export type TraceKind = '4h tepe' | '4h dip' | '1d tepe' | '1d dip' | '1d kapanış' | '1w tepe' | '1w dip' | '1w kapanış'
 export type Trace = { id: number; price: number; kind: TraceKind; tf: '4h' | '1d' | '1w'; at: number; src: number; w: number; wear: number }
 
-export type EventKind = 'created' | 'resized' | 'touch' | 'hold' | 'break' | 'ended'
+export type EventKind = 'created' | 'touch' | 'hold' | 'break' | 'ended' | 'shown' | 'hidden'
 export type ZoneEvent = { t: number; kind: EventKind; price: number; lo: number; hi: number; score: number; note?: string }
 
 export type Zone = {
@@ -87,6 +101,7 @@ export type Zone = {
   touches: number
   holds: number
   breaks: number
+  shown: boolean // şu an gösterilenlerden
   events: ZoneEvent[]
   scores: Array<[number, number]> // puan geçmişi (değiştikçe; as-of görünüm için)
 }
@@ -277,9 +292,9 @@ export function run(c4: Candle[], d1: Candle[], w1: Candle[], p: Params, from = 
       }
     }
 
-    // 2) Yoğunluk tepeleri ve bölgelerin sürekliliği. Var olan bölge önce kendi tepesiyle eşleşir; tepesi
-    // kaymış ya da komşusuna karışmışsa kendi bandındaki izlerle sürer. İzleri sürdürme eşiğinin altına inince ya
-    // da bandı daha güçlü bir bölgeninkiyle örtüşünce biter. Yeni tepeler yalnız çevrelerinde bölge yoksa açılır.
+    // 2) Yoğunluk tepeleri ve bölgelerin sürekliliği. Var olan bölge kendi bandındaki izlerle sürer; ona denk gelen
+    // tepe yeni bölge açmaz. İzleri sürdürme eşiğinin altına inince ya da bandı daha güçlü bir bölgeninkiyle
+    // örtüşünce biter. Yeni tepeler yalnız çevrelerinde bölge yoksa açılır.
     const live: Live[] = []
     const peaks = peaksAt(traces, now, k.c, a, p, live)
     const sigma = p.sigmaAtr * a
@@ -304,30 +319,20 @@ export function run(c4: Candle[], d1: Candle[], w1: Candle[], p: Params, from = 
         }
       }
       const last = z.scores[z.scores.length - 1]![1]
-      if (best && best.score >= p.keepScore && !overlapsKept(best.lo, best.hi)) {
-        used.add(best)
-        z.score = best.score
-        z.mix = best.mix
-        if (Math.abs(best.lo - z.lo) + Math.abs(best.hi - z.hi) > 0.25 * a) {
-          z.lo = best.lo
-          z.hi = best.hi
-          ev(z, now, 'resized', k.c)
-        }
+      const o = own(z.lo, z.hi)
+      if (o.score >= p.keepScore && !overlapsKept(z.lo, z.hi)) {
+        if (best) used.add(best)
+        z.score = o.score
+        z.mix = o.mix
       } else {
-        const o = own(z.lo, z.hi)
-        if (o.score >= p.keepScore && !overlapsKept(z.lo, z.hi)) {
-          if (best) used.add(best)
-          z.score = o.score
-          z.mix = o.mix
-        } else {
-          z.endedAt = now
-          z.endReason = o.score < p.keepScore ? 'izler zayıfladı' : 'daha güçlü bir bölgeyle örtüştü'
-          z.score = o.score
-          z.scores.push([now, z.score])
-          ev(z, now, 'ended', k.c, z.endReason)
-          contact.delete(z.id)
-          continue
-        }
+        z.endedAt = now
+        z.endReason = o.score < p.keepScore ? 'izler zayıfladı' : 'daha güçlü bir bölgeyle örtüştü'
+        z.score = o.score
+        z.shown = false
+        z.scores.push([now, z.score])
+        ev(z, now, 'ended', k.c, z.endReason)
+        contact.delete(z.id)
+        continue
       }
       if (Math.abs(z.score - last) > 0.15 * last) z.scores.push([now, z.score])
       kept.push(z)
@@ -349,6 +354,7 @@ export function run(c4: Candle[], d1: Candle[], w1: Candle[], p: Params, from = 
         touches: 0,
         holds: 0,
         breaks: 0,
+        shown: false,
         events: [],
         scores: [[now, pk.score]],
       }
@@ -358,6 +364,15 @@ export function run(c4: Candle[], d1: Candle[], w1: Candle[], p: Params, from = 
       const side = k.c >= (z.lo + z.hi) / 2 ? 'above' : 'below'
       const dist = side === 'above' ? k.l - z.hi : z.lo - k.h
       contact.set(z.id, { side, armed: dist >= p.touchAwayAtr * a, touchAt: null })
+    }
+
+    // 3) Gösterilecekler.
+    const show = pickShown(active, k.c, p)
+    for (const z of active) {
+      const on = show.has(z)
+      if (on === z.shown) continue
+      z.shown = on
+      ev(z, now, on ? 'shown' : 'hidden', k.c)
     }
   }
 
@@ -370,4 +385,13 @@ export function run(c4: Candle[], d1: Candle[], w1: Candle[], p: Params, from = 
   }
 
   return { zones, traces }
+}
+
+// Fiyatın ±showWindowPct'sinde, üstte ve altta en güçlü showN bölge ve fiyatın içinde olduğu bölge. Şu an gösterilen
+// bölge sıralamada (1 + showHys) katı güçle yarışır; eşitlikte önce açılan.
+export function pickShown(active: Zone[], px: number, p: Params): Set<Zone> {
+  const near = active.filter((z) => z.hi >= px * (1 - p.showWindowPct / 100) && z.lo <= px * (1 + p.showWindowPct / 100))
+  const rank = (z: Zone) => z.score * (z.shown ? 1 + p.showHys : 1)
+  const top = (list: Zone[]) => list.sort((x, y) => rank(y) - rank(x) || x.id - y.id).slice(0, p.showN)
+  return new Set([...top(near.filter((z) => z.lo > px)), ...top(near.filter((z) => z.hi < px)), ...near.filter((z) => z.lo <= px && z.hi >= px)])
 }
