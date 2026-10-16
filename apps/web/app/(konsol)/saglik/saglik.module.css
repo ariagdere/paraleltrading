@@ -1,0 +1,314 @@
+/* Durum rengi (--level) globals.css'te data-level'dan. */
+
+/* Özet */
+.hero {
+  max-width: 62rem;
+}
+
+.verdict {
+  display: flex;
+  align-items: baseline;
+  gap: 0.9rem;
+  font-size: var(--fs-hero);
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.dot {
+  flex: none;
+  width: 0.62em;
+  height: 0.62em;
+  border-radius: 50%;
+  background: var(--level);
+  transform: translateY(-0.04em);
+}
+
+.summary {
+  margin-top: 1rem;
+  font-size: var(--fs-md);
+  color: var(--muted);
+  max-width: 56rem;
+  text-wrap: pretty;
+}
+
+.checked {
+  margin-top: 0.5rem;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+/* Kök sorunlar */
+.problems {
+  margin-top: 2rem;
+  max-width: 62rem;
+}
+
+.problems ul {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.problem {
+  padding: 1rem 1.25rem;
+  border-left: 5px solid var(--level);
+  background: color-mix(in srgb, var(--level) 9%, var(--ink));
+}
+
+.problemHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  font-size: var(--fs-md);
+  font-weight: 700;
+}
+
+.problemHead a {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+
+.problemText {
+  margin-top: 0.3rem;
+  overflow-wrap: anywhere;
+}
+
+.legend {
+  margin-top: 2.5rem;
+  max-width: 62rem;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+/* Gruplar: içerik alanı yeterince genişse iki sütun (gruplar bölünmeden akar) */
+.groups {
+  margin-top: 1.5rem;
+}
+
+@container (min-width: 1250px) {
+  .groups {
+    columns: 2;
+    column-gap: 4rem;
+  }
+}
+
+.group {
+  break-inside: avoid;
+  padding-top: 1.5rem;
+  margin-bottom: 2.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.groupTitle {
+  font-size: var(--fs-lg);
+}
+
+.about {
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.section + .section {
+  margin-top: 0.5rem;
+}
+
+.sectionTitle {
+  margin: 1.25rem 0 0.1rem;
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.rows {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Satır: ad | durum | çubuk | zaman */
+.row {
+  display: grid;
+  grid-template-columns: 7.5rem 5.75rem minmax(5rem, 22rem) minmax(12rem, 1fr);
+  align-items: center;
+  gap: 0.35rem 0.9rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  scroll-margin-top: 5rem;
+}
+
+.row:target {
+  background: var(--ink-2);
+  box-shadow: -0.75rem 0 0 var(--ink-2), 0.75rem 0 0 var(--ink-2);
+}
+
+.label {
+  font-weight: 600;
+}
+
+.word {
+  color: var(--level);
+  font-weight: 700;
+}
+
+.row[data-level='ok'] .word {
+  font-weight: 600;
+}
+
+.gauge {
+  position: relative;
+  height: 0.5rem;
+  border-radius: 999px;
+  /* sarı bölge: gecikme sınırından "durdu"ya */
+  background: linear-gradient(
+    to right,
+    var(--line) 0 80%,
+    color-mix(in srgb, var(--late) 40%, var(--line)) 80% 100%
+  );
+}
+
+/* sıradaki verinin beklendiği an */
+.gauge::after {
+  content: '';
+  position: absolute;
+  left: 60%;
+  top: -0.2rem;
+  bottom: -0.2rem;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--muted);
+  border-radius: 1px;
+}
+
+.fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--level);
+}
+
+.detail {
+  display: grid;
+  line-height: 1.35;
+}
+
+/* Çubuksuz satırda (bias, geçmiş doldurma) zaman bilgisi çubuğun yerini de kullanır. */
+.gaugeNone + .detail {
+  grid-column: 3 / -1;
+}
+
+.gaugeNone {
+  display: none;
+}
+
+.next {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.rowNote {
+  grid-column: 2 / -1;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.rowNote[data-kind='error'] {
+  color: color-mix(in srgb, var(--level) 70%, var(--text));
+}
+
+/* Son hatalar */
+.errors {
+  margin-top: 1rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.empty {
+  margin-top: 1rem;
+}
+
+.table {
+  width: 100%;
+  margin-top: 1rem;
+  border-collapse: collapse;
+}
+
+.table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  padding: 0 1.25rem 0.5rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.table td {
+  padding: 0.6rem 1.25rem 0.6rem 0;
+  vertical-align: top;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+}
+
+.table td:first-child {
+  white-space: nowrap;
+}
+
+.table td:nth-child(2) {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.errorCell {
+  width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* Dar ekran: satır üç kat (ad ve durum, çubuk, zaman) */
+@media (max-width: 760px) {
+  .verdict {
+    font-size: var(--fs-xl);
+  }
+
+  .row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.4rem 1rem;
+  }
+
+  .gauge,
+  .detail,
+  .gaugeNone + .detail {
+    grid-column: 1 / -1;
+  }
+
+  .word {
+    text-align: right;
+  }
+
+  .rowNote {
+    grid-column: 1 / -1;
+  }
+
+  .table thead {
+    display: none;
+  }
+
+  .table tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.1rem 1rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  }
+
+  .table td {
+    padding: 0;
+    border: 0;
+  }
+
+  .table td.errorCell {
+    grid-column: 1 / -1;
+  }
+}

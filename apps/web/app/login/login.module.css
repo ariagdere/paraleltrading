@@ -1,0 +1,86 @@
+.page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 2rem var(--gutter);
+}
+
+.panel {
+  width: 100%;
+  max-width: 26rem;
+}
+
+.mark {
+  font-size: var(--fs-md);
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 0.75rem;
+}
+
+.title {
+  font-size: var(--fs-xl);
+  margin-bottom: 2rem;
+}
+
+.error,
+.info {
+  margin-bottom: 1.5rem;
+  padding: 0.9rem 1.1rem;
+  border-left: 4px solid var(--fail);
+  background: color-mix(in srgb, var(--fail) 12%, var(--ink));
+}
+
+.info {
+  border-left-color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 10%, var(--ink));
+}
+
+.form {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.4rem;
+  font-weight: 600;
+}
+
+.field input {
+  width: 100%;
+  padding: 0.8rem 1rem;
+  font-size: var(--fs-md);
+  font-weight: 400;
+  background: var(--ink-2);
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+}
+
+.field input:focus-visible {
+  outline: 3px solid var(--text);
+  outline-offset: 1px;
+  border-color: var(--text);
+}
+
+.submit {
+  margin-top: 0.5rem;
+  padding: 0.85rem 1rem;
+  font-size: var(--fs-md);
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--text);
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.submit:hover {
+  background: #ffffff;
+}
+
+.submit:disabled {
+  cursor: not-allowed;
+  background: var(--line-2);
+  color: var(--muted);
+}

@@ -1,0 +1,123 @@
+/* Geniş ekranda (≥ 1600 px) solda sabit menü, daha darda üstte tek satır: 1366–1599 px'te içerik iki sütuna sığsın. */
+
+.shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.85rem var(--gutter);
+  border-bottom: 1px solid var(--line);
+  background: var(--ink);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.mark {
+  font-size: var(--fs-md);
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.links {
+  display: flex;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex: 1;
+}
+
+.link {
+  display: block;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.link:hover {
+  color: var(--text);
+  background: var(--ink-2);
+}
+
+.link[aria-current='page'] {
+  color: var(--text);
+  background: var(--ink-3);
+}
+
+.logout {
+  margin: 0;
+}
+
+.logoutButton {
+  padding: 0.35rem 0.75rem;
+  background: none;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.logoutButton:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+.main {
+  padding: 2rem var(--gutter) 4rem;
+  container-type: inline-size;
+}
+
+@media (min-width: 1600px) {
+  .shell {
+    display: grid;
+    grid-template-columns: var(--nav-w) minmax(0, 1fr);
+  }
+
+  .nav {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    height: 100dvh;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2.25rem;
+    padding: 2.25rem 1.25rem 1.75rem;
+    border-bottom: 0;
+    border-right: 1px solid var(--line);
+  }
+
+  .mark {
+    padding: 0 0.75rem;
+    font-size: var(--fs-lg);
+  }
+
+  .links {
+    flex-direction: column;
+  }
+
+  .link {
+    padding: 0.6rem 0.75rem;
+    font-size: var(--fs-md);
+  }
+
+  .logoutButton {
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    text-align: left;
+  }
+
+  .main {
+    padding: 2.75rem clamp(2rem, 3.5vw, 4rem) 5rem;
+    max-width: calc(var(--content-max) + 8rem);
+  }
+}
