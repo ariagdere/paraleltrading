@@ -1,6 +1,11 @@
 # core servisi (Railway)
 
-core, collector'ın yazdığı ham verilerden hesaplanan değerleri üretip aynı Postgres'e yazan ikinci süreç. Şimdilik Axi mumlarının göstergelerini hesaplıyor: ZLEMA bölgesi, RSI 14 ve ATR 14. Bunlar 15m, 1h, 4h ve 1d dilimlerinde her kapanmış mum için `axi_indicators` tablosuna yazılıyor. L/S açıları ve heatmap cluster'ları sonraki PR'larla gelecek.
+core, collector'ın yazdığı ham verilerden hesaplanan değerleri üretip aynı Postgres'e yazan ikinci süreç. İki hesap yapıyor:
+
+- **Axi göstergeleri** (`axi_indicators`): ZLEMA bölgesi, RSI 14 ve ATR 14; 15m, 1h, 4h ve 1d dilimlerinde her kapanmış mum için.
+- **Heatmap seviyeleri** (`heatmap_levels`): her heatmap snapshot'ı (12h, 24h, 48h) için her yönde en çok 3 cluster, %1/2/3 bant likiditesi ve heatmap fiyatı ile Axi fiyatı arasındaki baz.
+
+L/S açıları sonraki PR'la gelecek.
 
 collector'la aynı repodan ikinci bir servis: kod aynı, başlatma komutu ve izlenen yollar farklı. Böylece core'a gelen bir değişiklik collector'ı yeniden başlatmaz, core'daki bir hata da veri toplamayı durdurmaz. İkisi aynı Postgres'i kullanır.
 
@@ -45,11 +50,14 @@ Başka değişken gerekmiyor; core dış servislere bağlanmıyor. `Postgres` ye
 [core] 1h: ... mum hesaplandı, ... satır yazıldı
 [core] 4h: ... mum hesaplandı, ... satır yazıldı
 [core] 1d: ... mum hesaplandı, ... satır yazıldı
+[core] heatmap: ... snapshot hesaplandı
 ```
 
 - `003_gostergeler.sql` migration'ını hangi servis önce açılırsa o uygular. Bu PR `packages/db`'yi değiştirdiği için collector da yeniden başlar ve büyük ihtimalle 003'ü o uygular (`uygulandı: 003_gostergeler.sql`); core sonra açılınca "şema güncel" yazar.
 - İlk hesap bütün geçmişi birkaç saniyede bitirir. Sonra dakikada bir (saniye 20, collector'ın mum turundan sonra) yeni ya da düzeltilmiş mumlar işlenir; tek mumluk güncellemelerde log satırı düşmez.
 - collector bir mumu düzeltirse ya da boşluk denetimi araya mum eklerse, o mumdan sonrası yeniden hesaplanır ve yalnız değişen satırlar yazılır (`[core] 1h: 643 mum hesaplandı, 455 satır yazıldı` gibi).
+- Heatmap seviyeleri ilk açılışta bütün snapshot'lar için hesaplanır: eski sistemden kopyalanan 12h'ler ve collector'ın yazdıkları (yaklaşık 900). Sonra her yeni snapshot bir sonraki dakika işlenir.
+- Beklenmeyen biçimde bir snapshot olursa `[core] heatmap 123 (12h): seviye çıkmadı` yazar; o snapshot boş satırla işaretlenir, yeniden denenmez.
 - Deploy sırasında eski süreç kapanana kadar yenisi `başka bir core çalışıyor; kilit bekleniyor` yazar.
 
 ## 5. Hesaplar
@@ -64,6 +72,24 @@ Başka değişken gerekmiyor; core dış servislere bağlanmıyor. `Postgres` ye
 - Değer mum kapanınca bilinir. 4h mumu İstanbul 16:00'da açıldıysa değeri 20:00'de kesinleşir.
 - Eski sistem 4h bölgesini Binance mumlarıyla ve oluşan (henüz kapanmamış) mumu da katarak hesaplıyordu. Oluşan mumlu değer saklanmaz; geriye dönük simülasyon aynı fonksiyonla 1m mumlardan hesaplayacak.
 - İlk 149 mumda ZLEMA, ilk 14 mumda RSI, ilk 13 mumda ATR boş. Collector her dilimde 18 Eylül'den 1000 mum öncesine kadar indiği için 18 Eylül'den itibaren hepsi dolu.
+
+### Heatmap seviyeleri (`heatmap_levels`)
+
+Her snapshot için bir satır; değer snapshot'ın `received_at` anında bilinir.
+
+| Sütun | Hesap |
+|---|---|
+| `ref_price` | Heatmap'in referans fiyatı: son fiyat mumunun kapanışı (eski sistemle aynı) |
+| `up1_price`, `up1_usd` … `up3_*` | Referansın üstündeki cluster'lar. Her seviyenin bütün sütunlardaki likidite toplamı alınır, $1M altı dışarıda kalır. En büyük seviye ve onun ±$300'ündeki seviyeler bir cluster: fiyatı likiditeyle ağırlıklı ortalama, likiditesi toplam. `up1` eski sistemin cluster'ının aynısı; `up2` ve `up3` aynı kuralın kalan seviyelerde tekrarı |
+| `dn1_*` … `dn3_*` | Referansın altındaki cluster'lar, aynı kural |
+| `up_liq_1pct`, `_2pct`, `_3pct` | Referansın %1, %2, %3 yukarısına kadarki bütün seviyelerin likidite toplamı ($1M altı da) |
+| `dn_liq_*` | Aynısı aşağı yönde |
+| `axi_price` | O anki Axi fiyatı: snapshot'ın güncellenme anına kadar kapanmış son Axi 1m mumunun kapanışı (bid) |
+| `basis` | `ref_price − axi_price`. Heatmap fiyatıyla bulunan bir seviye Axi'de `seviye − basis` |
+
+- Eski sistem cluster değerlerini iki ondalığa yuvarlayıp kullanıyordu; burada yuvarlanmadan saklanıyor.
+- 2. ve 3. cluster tepe seviyesine göre sıralı. Çok seviyeli bir kümenin toplamı tek büyük seviyeden oluşan 1. cluster'ınkini geçebilir.
+- Axi 1m mumu o an yoksa (MetaApi geç verdiyse) `axi_price` ve `basis` boş kalır; son bir günün satırlarında mum gelince doldurulur. Axi 1m serisi 17 Eylül'de başladığı için eski sistemden kopyalanan daha eski 12h'lerde baz yok.
 
 ## 6. DBeaver'da kontrol
 
@@ -80,10 +106,17 @@ ORDER BY timeframe;
 SELECT open_time AT TIME ZONE 'Europe/Istanbul' AS acilis, zlema_zone, round(rsi14::numeric, 1) AS rsi
 FROM axi_indicators WHERE timeframe = '4h' ORDER BY open_time DESC LIMIT 12;
 
+-- son heatmap seviyeleri (İstanbul saati)
+SELECT l.span, l.received_at AT TIME ZONE 'Europe/Istanbul' AS geldi, round(l.ref_price::numeric) AS ref,
+       round(l.basis::numeric, 1) AS baz, round(l.up1_price::numeric) AS ust, round((l.up1_usd / 1e6)::numeric, 1) AS ust_m,
+       round(l.dn1_price::numeric) AS alt, round((l.dn1_usd / 1e6)::numeric, 1) AS alt_m
+FROM heatmap_levels l ORDER BY l.snapshot_id DESC LIMIT 6;
+
 -- sağlık
 SELECT source, last_success_at, last_source_time, consecutive_failures, last_error
 FROM collector_status WHERE source LIKE 'core:%' ORDER BY source;
 ```
 
-- `core:*` satırlarında `last_source_time`, o dilimde göstergesi hesaplanmış son mumun açılışı. collector'ın aynı dilimdeki `axi:*` satırıyla aynı olmalı; en çok bir dakika geride kalabilir.
+- `core:15m` … `core:1d` satırlarında `last_source_time`, o dilimde göstergesi hesaplanmış son mumun açılışı. collector'ın aynı dilimdeki `axi:*` satırıyla aynı olmalı; en çok bir dakika geride kalabilir.
+- `core:heatmap` satırında `last_source_time`, seviyesi hesaplanmış son snapshot'ın `received_at`'i.
 - Hata görürsen `last_error` sebebi söyler; bir sonraki dakika yeniden dener.
