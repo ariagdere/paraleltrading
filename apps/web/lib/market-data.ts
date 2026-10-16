@@ -9,9 +9,6 @@ export const SYMBOL = process.env.AXI_SYMBOL || 'BTCUSD'
 export const SPANS = ['12h', '24h', '48h'] as const
 export type Span = (typeof SPANS)[number]
 export const isSpan = (s: unknown): s is Span => typeof s === 'string' && (SPANS as readonly string[]).includes(s)
-// Heatmap penceresine göre mum dilimi: 12h'de 5m (144 mum), 24h ve 48h'de 15m (96 ve 192 mum).
-const CANDLE_TF: Record<Span, '5m' | '15m'> = { '12h': '5m', '24h': '15m', '48h': '15m' }
-const SPAN_MS: Record<Span, number> = { '12h': 12 * 3_600_000, '24h': 24 * 3_600_000, '48h': 48 * 3_600_000 }
 
 export type Zone = 'LONG' | 'SHORT' | 'NO_TRADE'
 export type Quote = { price: number; at: Date; prevClose: number | null }
@@ -30,6 +27,7 @@ export type BiasRow = {
 export type Market = {
   now: Date
   quote: Quote | null
+  basis: number | null // en yeni 24h snapshot'ının bazı (CoinGlass − Axi)
   indicators: IndicatorRow[]
   angles: AngleRow[]
   ratios: RatioRow[]
@@ -38,7 +36,7 @@ export type Market = {
 
 export async function loadMarket(): Promise<Market> {
   const pool = db()
-  const [now, last, prev, ind, ang, rat, bias] = await Promise.all([
+  const [now, last, prev, ind, ang, rat, bias, basis] = await Promise.all([
     pool.query<{ now: Date }>('SELECT now() AS now'),
     pool.query<{ close: number; t: Date }>(
       `SELECT close, open_time + interval '1 minute' AS t FROM axi_candles
@@ -70,12 +68,14 @@ export async function loadMarket(): Promise<Market> {
       `SELECT committed_at, run_date, bias, confidence, net_direction, sentiment_score, conclusion
        FROM daily_bias ORDER BY committed_at DESC LIMIT 1`,
     ),
+    pool.query<{ basis: number | null }>(`SELECT basis FROM heatmap_levels WHERE span = '24h' ORDER BY received_at DESC LIMIT 1`),
   ])
   const l = last.rows[0]
   const b = bias.rows[0]
   return {
     now: now.rows[0]!.now,
     quote: l ? { price: l.close, at: l.t, prevClose: prev.rows[0]?.close ?? null } : null,
+    basis: basis.rows[0]?.basis ?? null,
     indicators: ind.rows.map((r) => ({ tf: r.timeframe, openTime: r.open_time, zone: r.zlema_zone, rsi: r.rsi14, atr: r.atr14 })),
     angles: ang.rows.map((r) => ({ metric: r.metric, period: r.period, ts: r.ts, angle: r.angle })),
     ratios: rat.rows.map((r) => ({ metric: r.metric, ts: r.ts, ratio: r.long_short_ratio })),
@@ -107,7 +107,6 @@ export type HeatView = {
   upLiq: number[] // referansın %1/2/3 yukarısına kadar (USD)
   dnLiq: number[]
   grid: HeatGrid | null
-  candles: { tf: string; rows: Array<[number, number, number, number, number]> }
 }
 
 type LevelsRow = {
@@ -143,8 +142,8 @@ const clusters = (l: LevelsRow, side: 'up' | 'dn', shift: number): Cluster[] => 
   return out.sort((a, b) => (side === 'up' ? a.price - b.price : b.price - a.price))
 }
 
-// Bir pencerenin snapshot'ı (id verilmezse en yenisi), seviyeleri, ısı ızgarası ve aynı aralığın Axi mumları.
-export async function loadHeatView(span: Span, id: number | null, nowOverride?: Date): Promise<HeatView | null> {
+// Bir pencerenin snapshot'ı (id verilmezse en yenisi), seviyeleri ve ısı ızgarası.
+export async function loadHeatView(span: Span, id: number | null): Promise<HeatView | null> {
   const pool = db()
   const { rows: snaps } = await pool.query<{ id: string; received_at: Date; payload_gz: Buffer }>(
     id === null
@@ -155,14 +154,13 @@ export async function loadHeatView(span: Span, id: number | null, nowOverride?: 
   const s = snaps[0]
   if (!s) return null
   const sid = Number(s.id)
-  const [lv, nb, nowRow] = await Promise.all([
+  const [lv, nb] = await Promise.all([
     pool.query<LevelsRow>(`SELECT * FROM heatmap_levels WHERE snapshot_id = $1`, [sid]),
     pool.query<{ prev: string | null; next: string | null }>(
       `SELECT (SELECT id FROM heatmap_snapshots WHERE span = $1 AND received_at < $2 ORDER BY received_at DESC LIMIT 1) AS prev,
               (SELECT id FROM heatmap_snapshots WHERE span = $1 AND received_at > $2 ORDER BY received_at LIMIT 1) AS next`,
       [span, s.received_at],
     ),
-    pool.query<{ now: Date }>('SELECT now() AS now'),
   ])
   const l = lv.rows[0] ?? null
   const basis = l?.basis ?? null
@@ -172,16 +170,6 @@ export async function loadHeatView(span: Span, id: number | null, nowOverride?: 
   } catch {
     grid = null
   }
-  // Mumlar: ızgaranın başından, snapshot'tan sonra pencerenin dörtte biri kadar (en çok şimdiye) ilerisine.
-  const now = (nowOverride ?? nowRow.rows[0]!.now).getTime()
-  const from = grid ? grid.cols[0]! : s.received_at.getTime() - SPAN_MS[span]
-  const to = Math.min(now, s.received_at.getTime() + SPAN_MS[span] / 4)
-  const tf = CANDLE_TF[span]
-  const { rows: cs } = await pool.query<{ t: string; o: number; h: number; l: number; c: number }>(
-    `SELECT (extract(epoch FROM open_time) * 1000)::bigint::text AS t, open AS o, high AS h, low AS l, close AS c
-     FROM axi_candles WHERE symbol = $1 AND timeframe = $2 AND open_time >= $3 AND open_time < $4 ORDER BY open_time`,
-    [SYMBOL, tf, new Date(from), new Date(to)],
-  )
   const shift = basis ?? 0
   return {
     span,
@@ -195,6 +183,5 @@ export async function loadHeatView(span: Span, id: number | null, nowOverride?: 
     upLiq: l ? [l.up_liq_1pct ?? 0, l.up_liq_2pct ?? 0, l.up_liq_3pct ?? 0] : [],
     dnLiq: l ? [l.dn_liq_1pct ?? 0, l.dn_liq_2pct ?? 0, l.dn_liq_3pct ?? 0] : [],
     grid,
-    candles: { tf, rows: cs.map((k) => [Number(k.t), k.o, k.h, k.l, k.c]) },
   }
 }

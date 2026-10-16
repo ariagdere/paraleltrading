@@ -12,6 +12,7 @@
   "dependencies": {
     "@fontsource-variable/atkinson-hyperlegible-next": "5.3.0",
     "@pt/db": "*",
+    "lightweight-charts": "5.2.1",
     "next": "16.4.2",
     "react": "19.3.1",
     "react-dom": "19.3.1"

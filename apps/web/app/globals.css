@@ -17,6 +17,7 @@
   /* Grafik: yükselen mum, düşen mum (renk körlüğünde de ayrışsın diye biri nötr) */
   --up: #199e70;
   --down: #8a93a8;
+  --zone: #9085e9; /* destek/direnç bantları (ısı sarı olduğu için mor) */
 
   --font: 'Atkinson Hyperlegible Next Variable', 'Atkinson Hyperlegible Next', system-ui, sans-serif;
 
