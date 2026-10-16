@@ -1,9 +1,10 @@
 // core: collector'ın ham verilerinden hesaplanan değerleri Postgres'e yazan süreç. Axi göstergeleri (ZLEMA bölgesi,
-// RSI, ATR; 15m, 1h, 4h, 1d) ve heatmap seviyeleri (cluster'lar, bant likiditesi, baz). Açılışta migration'ları
-// uygular ve eksikleri hesaplar; sonra dakikada bir (saniye 20, collector'ın mum turundan sonra) yeni ya da
-// düzeltilmiş mumları ve yeni heatmap snapshot'larını işler.
+// RSI, ATR; 15m, 1h, 4h, 1d), heatmap seviyeleri (cluster'lar, bant likiditesi, baz) ve L/S açıları (global ve TT;
+// 5m, 15m, 1h, 4h). Açılışta migration'ları uygular ve eksikleri hesaplar; sonra dakikada bir (saniye 20,
+// collector'ın mum turundan sonra) yeni ya da düzeltilmiş mumları, yeni heatmap snapshot'larını ve L/S noktalarını işler.
 import { createPool, every, migrate, type Job, type Pool } from '@pt/db'
 import { syncHeatmapLevels } from './heatmap.js'
+import { syncLsrAngles } from './lsr.js'
 import { syncIndicators } from './sync.js'
 
 // Deploy sırasında eski ve yeni süreç kısa süre birlikte açık kalabilir; bu kilitle yalnız biri çalışır.
@@ -38,7 +39,10 @@ while (!(await lock.query<{ ok: boolean }>('SELECT pg_try_advisory_lock($1) AS o
 console.log('[core] başladı')
 
 const jobs: Job[] = []
-const turn = () => syncIndicators(pool).then(() => syncHeatmapLevels(pool))
+const turn = () =>
+  syncIndicators(pool)
+    .then(() => syncHeatmapLevels(pool))
+    .then(() => syncLsrAngles(pool))
 const first = turn()
 
 async function stop(signal: string) {
