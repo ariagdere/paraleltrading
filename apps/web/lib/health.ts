@@ -34,7 +34,7 @@ export type StatusRow = {
 export type GroupKey = 'axi' | 'heatmap' | 'lsr' | 'bias' | 'legacy' | 'other'
 
 export const GROUPS: Array<{ key: GroupKey; title: string; about: string }> = [
-  { key: 'axi', title: 'Axi BTCUSD', about: "MetaApi'den kapanmış mumlar; göstergeleri core hesaplar." },
+  { key: 'axi', title: 'Axi BTCUSD', about: "MetaApi'den kapanmış mumlar; göstergeleri ve destek/direnç bölgelerini core hesaplar." },
   { key: 'heatmap', title: "Likidasyon heatmap'i", about: "CoinGlass model1, Apify ile saatte bir; seviyeleri core hesaplar." },
   { key: 'lsr', title: 'Long/Short oranı', about: "Binance futures, 5 dakikada bir; açıları core hesaplar." },
   { key: 'bias', title: 'Günlük bias', about: 'Claude rutini, hafta içi her gün 09:07; GitHub bias-data dalından.' },
@@ -76,6 +76,10 @@ export const CATALOG: Def[] = [
     source: `core:${tf}`, group: 'axi', section: 'Göstergeler: ZLEMA, RSI, ATR', label: tf, name: `Axi ${tf} göstergeleri`,
     kind: 'candle', critical: true, stepMs, dataWord: 'son mum', upstream: [`axi:${tf}`],
   })),
+  {
+    source: 'core:sr', group: 'axi', section: 'Destek/direnç', label: 'Bölgeler', name: 'Destek/direnç bölgeleri',
+    kind: 'candle', critical: true, stepMs: 4 * HOUR, dataWord: 'son 4h mumu', upstream: ['axi:4h'],
+  },
   { source: 'axi:gaps', group: 'axi', section: 'Bakım', label: 'Boşluk denetimi', name: 'Mum boşluğu denetimi', kind: 'job', critical: false },
   { source: 'axi:spec', group: 'axi', section: 'Bakım', label: 'Sembol bilgisi', name: 'Axi sembol bilgisi', kind: 'job', critical: false },
   { source: 'axi:backfill', group: 'axi', section: 'Bakım', label: 'Geçmiş doldurma', name: 'Axi geçmiş doldurma', kind: 'backfill', critical: false },

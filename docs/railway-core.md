@@ -1,8 +1,9 @@
 # core servisi (Railway)
 
-core, collector'ın yazdığı ham verilerden hesaplanan değerleri üretip aynı Postgres'e yazan ikinci süreç. Üç hesap yapıyor:
+core, collector'ın yazdığı ham verilerden hesaplanan değerleri üretip aynı Postgres'e yazan ikinci süreç. Dört hesap yapıyor:
 
 - **Axi göstergeleri** (`axi_indicators`): ZLEMA bölgesi, RSI 14 ve ATR 14; 15m, 1h, 4h ve 1d dilimlerinde her kapanmış mum için.
+- **Destek/direnç bölgeleri** (`sr_zones`, `sr_zone_events`): Axi 4h ve 1d mumlarından; her bölgenin oluştuğu ve bittiği an, bandı, puanı, hangi dilimlerden geldiği ve olayları (test, tuttu, kırıldı). Her 4h kapanışında.
 - **Heatmap seviyeleri** (`heatmap_levels`): her heatmap snapshot'ı (12h, 24h, 48h) için her yönde en çok 3 cluster, %1/2/3 bant likiditesi ve heatmap fiyatı ile Axi fiyatı arasındaki baz.
 - **L/S açıları** (`lsr_angles`): global ve TT pozisyon oranı için 5m, 15m, 1h ve 4h dilimlerinde serinin her noktasında açı.
 
@@ -49,14 +50,16 @@ Başka değişken gerekmiyor; core dış servislere bağlanmıyor. `Postgres` ye
 [core] 1h: ... mum hesaplandı, ... satır yazıldı
 [core] 4h: ... mum hesaplandı, ... satır yazıldı
 [core] 1d: ... mum hesaplandı, ... satır yazıldı
+[core] destek/direnç: ... bölge (... geçerli); ... bölge, ... olay yazıldı, 0 silindi
 [core] heatmap: ... snapshot hesaplandı
 [core] L/S açıları (global): ... satır yazıldı
 [core] L/S açıları (top_position): ... satır yazıldı
 ```
 
-- `003_gostergeler.sql` migration'ını hangi servis önce açılırsa o uygular. Bu PR `packages/db`'yi değiştirdiği için collector da yeniden başlar ve büyük ihtimalle 003'ü o uygular (`uygulandı: 003_gostergeler.sql`); core sonra açılınca "şema güncel" yazar.
+- Yeni bir migration'ı (ör. `006_destek_direnc.sql`) hangi servis önce açılırsa o uygular. `packages/db`'yi değiştiren bir merge collector'ı, core'u ve web'i birlikte yeniden başlatır; migration'ı büyük ihtimalle collector uygular (`uygulandı: 006_destek_direnc.sql`), core sonra açılınca "şema güncel" yazar. Heatmap turuna denk gelmesin diye böyle merge'leri xx:00–xx:06 dışında yap.
 - İlk hesap bütün geçmişi birkaç saniyede bitirir. Sonra dakikada bir (saniye 20, collector'ın mum turundan sonra) yeni ya da düzeltilmiş mumlar işlenir; tek mumluk güncellemelerde log satırı düşmez.
 - collector bir mumu düzeltirse ya da boşluk denetimi araya mum eklerse, o mumdan sonrası yeniden hesaplanır ve yalnız değişen satırlar yazılır (`[core] 1h: 643 mum hesaplandı, 455 satır yazıldı` gibi).
+- Destek/direnç ilk açılışta bütün 4h geçmişini (Nisan'dan) baştan oynatır, bir saniye kadar sürer. Sonra her yeni 4h ya da 1d kapanışında (günde 6 kez) ve bu dilimlerde bir mum düzeltilince ya da araya eklenince yeniden oynatır; yalnız değişen satırları yazar (her 4h kapanışında geçerli bölgelerin puanı ve yeni olaylar, birkaç on satır).
 - Heatmap seviyeleri ilk açılışta bütün snapshot'lar için hesaplanır: eski sistemden kopyalanan 12h'ler ve collector'ın yazdıkları (yaklaşık 900). Sonra her yeni snapshot bir sonraki dakika işlenir.
 - L/S açıları ilk açılışta bütün seri için hesaplanır (metrik başına ~18 bin satır, bir saniye kadar). Sonra yeni 5m noktası geldikçe (5 dakikada bir) yalnız yeni satırlar yazılır.
 - Beklenmeyen biçimde bir snapshot olursa `[core] heatmap 123 (12h): seviye çıkmadı` yazar; o snapshot boş satırla işaretlenir, yeniden denenmez.
@@ -74,6 +77,31 @@ Başka değişken gerekmiyor; core dış servislere bağlanmıyor. `Postgres` ye
 - Değer mum kapanınca bilinir. 4h mumu İstanbul 16:00'da açıldıysa değeri 20:00'de kesinleşir.
 - Eski sistem 4h bölgesini Binance mumlarıyla ve oluşan (henüz kapanmamış) mumu da katarak hesaplıyordu. Oluşan mumlu değer saklanmaz; geriye dönük simülasyon aynı fonksiyonla 1m mumlardan hesaplayacak.
 - İlk 149 mumda ZLEMA, ilk 14 mumda RSI, ilk 13 mumda ATR boş. Collector her dilimde 18 Eylül'den 1000 mum öncesine kadar indiği için 18 Eylül'den itibaren hepsi dolu.
+
+### Destek/direnç bölgeleri (`sr_zones`, `sr_zone_events`)
+
+Bölge, fiyatın birçok kez döndüğü ya da kapandığı fiyat aralığı. Hesap 4h kapanışlarında ve yalnız o ana kadar bilinenle yapılır; bölgenin oluşma ve bitiş anı da, olayların anı da o anda bilinen bir 4h kapanışı.
+
+- **İzler:**
+  - 4h dönüş noktaları: iki yanında 2 mum daha uç değil ve 12 mum içinde en az 1 ATR(4h) tepki var. Fiyat dönüşten 1 ATR uzaklaştığı 4h kapanışında bilinir, en erken iki mum sonra. Ağırlık 1.
+  - Günlük tepe, dip ve kapanış: ağırlık her biri 0,5, gün kapanışında.
+  - Haftalık tepe, dip ve kapanış: ağırlık her biri 1,5, hafta kapanışında. Hafta pazartesi 00:00 İstanbul'da başlar.
+  - İzler yarı ömürle zayıflar: 4h'de 21 gün, günlükte 30 gün, haftalıkta 120 gün.
+- **Bölge:** izlerin fiyat ekseninde yoğunlaştığı yer (her iz 0,15 ATR genişliğinde bir çan eğrisi). Bant tepenin %60'ına kadar uzanır, yarı genişlik 0,08–0,5 ATR. Puan, bandındaki izlerin o anki ağırlıkları toplamı.
+- **Yaşam:**
+  - Yeni bölge puan ≥ 3 ile açılır; iki bölgenin merkezleri arasında en az 0,8 ATR olur.
+  - Bölge, kendi bandının puanı 2'nin altına inince (`izler zayıfladı`) ya da daha güçlü bir bölgeyle örtüşünce biter.
+  - Kırılma bölgeyi bitirmez, rolünü çevirir: destek dirence döner.
+
+| Tablo | İçerik |
+|---|---|
+| `sr_zones` | Bölgenin son durumu: `created_at`, `ended_at` (sürüyorsa boş), `end_reason`, son bant `lo`–`hi`, `score` ve dilimlere dağılımı (`score_4h`, `score_1d`, `score_1w`), `touches`, `holds`, `breaks`, puan geçmişi (`score_at`, `score_value`: oluşunca ve %15'ten çok değişince) |
+| `sr_zone_events` | Olaylar sırayla (`seq`): `created`; `resized` (bant 0,25 ATR'den çok değişti); `touch` (en az 0,6 ATR uzaktan gelip banda girdi); `hold` (testten sonra aynı yana 1 ATR uzaklaştı); `break` (bandın 0,15 ATR ötesinde kapandı); `ended`. Her olayda o anki fiyat, bant ve puan |
+| `sr_versions` | Algoritma ve parametre sürümü (`v2`) ve parametreleri |
+
+- Bir bölgenin bandı ve puanı zamanla değişir; belli bir andaki hali o andan önceki son olaydadır (aşağıdaki sorgu).
+- Algoritma ya da parametre değişince yeni sürüm açılır. Eski sürümün satırları olduğu gibi kalır.
+- Prototip ve ölçümler: proje dokümanı "Destek/direnç bölgeleri — prototip ve kararlar".
 
 ### Heatmap seviyeleri (`heatmap_levels`)
 
@@ -123,6 +151,27 @@ ORDER BY timeframe;
 SELECT open_time AT TIME ZONE 'Europe/Istanbul' AS acilis, zlema_zone, round(rsi14::numeric, 1) AS rsi
 FROM axi_indicators WHERE timeframe = '4h' ORDER BY open_time DESC LIMIT 12;
 
+-- geçerli destek/direnç bölgeleri, yukarıdan aşağı (İstanbul saati)
+SELECT zone_id, round(lo::numeric) AS alt, round(hi::numeric) AS ust, round(score::numeric, 1) AS puan,
+       round(score_4h::numeric, 1) AS p4h, round(score_1d::numeric, 1) AS p1d, round(score_1w::numeric, 1) AS p1w,
+       created_at AT TIME ZONE 'Europe/Istanbul' AS olustu, touches AS test, holds AS tuttu, breaks AS kirildi
+FROM sr_zones WHERE version = 'v2' AND ended_at IS NULL ORDER BY hi DESC;
+
+-- son destek/direnç olayları
+SELECT e.at AT TIME ZONE 'Europe/Istanbul' AS an, e.zone_id, e.kind, round(e.price::numeric) AS fiyat,
+       round(e.lo::numeric) AS alt, round(e.hi::numeric) AS ust, e.note
+FROM sr_zone_events e WHERE e.version = 'v2' ORDER BY e.at DESC, e.zone_id, e.seq DESC LIMIT 20;
+
+-- bir andaki bölgeler ve o anki bantları: örnek 12 Ekim 16:00 İstanbul
+SELECT z.zone_id, round(e.lo::numeric) AS alt, round(e.hi::numeric) AS ust, round(e.score::numeric, 1) AS olaydaki_puan
+FROM sr_zones z
+JOIN LATERAL (SELECT lo, hi, score FROM sr_zone_events
+              WHERE symbol = z.symbol AND version = z.version AND zone_id = z.zone_id AND at <= timestamptz '2026-10-12 16:00+03'
+              ORDER BY seq DESC LIMIT 1) e ON true
+WHERE z.version = 'v2' AND z.created_at <= timestamptz '2026-10-12 16:00+03'
+  AND (z.ended_at IS NULL OR z.ended_at > timestamptz '2026-10-12 16:00+03')
+ORDER BY e.hi DESC;
+
 -- son heatmap seviyeleri (İstanbul saati)
 SELECT l.span, l.received_at AT TIME ZONE 'Europe/Istanbul' AS geldi, round(l.ref_price::numeric) AS ref,
        round(l.basis::numeric, 1) AS baz, round(l.up1_price::numeric) AS ust, round((l.up1_usd / 1e6)::numeric, 1) AS ust_m,
@@ -148,6 +197,7 @@ FROM collector_status WHERE source LIKE 'core:%' ORDER BY source;
 ```
 
 - `core:15m` … `core:1d` satırlarında `last_source_time`, o dilimde göstergesi hesaplanmış son mumun açılışı. collector'ın aynı dilimdeki `axi:*` satırıyla aynı olmalı; en çok bir dakika geride kalabilir.
+- `core:sr` satırında `last_source_time`, bölgeleri hesaplanmış son 4h mumunun açılışı; `axi:4h` satırıyla aynı olmalı (en çok bir dakika geride).
 - `core:heatmap` satırında `last_source_time`, seviyesi hesaplanmış son snapshot'ın `received_at`'i.
 - `core:lsr` satırında `last_source_time`, açısı hesaplanmış son L/S noktası; collector'ın `lsr:*` satırlarıyla aynı olmalı (en çok bir dakika geride).
 - Hata görürsen `last_error` sebebi söyler; bir sonraki dakika yeniden dener.
