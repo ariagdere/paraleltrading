@@ -1,5 +1,5 @@
-/* Temel fiyat grafiği: üstte dilim ve katman düğmeleri, heatmap açıkken snapshot seçimi; altta açık katmanların
-   ayrıntısı. Katman düğmeleri aynı zamanda lejant: her birinin işareti grafikteki çizimiyle aynı. */
+/* Temel fiyat grafiği: üstte dilim ve katman düğmeleri, heatmap açıkken pencere seçimi ve son güncelleme; altta açık
+   katmanların ayrıntısı. Katman düğmeleri aynı zamanda lejant: her birinin işareti grafikteki çizimiyle aynı. */
 
 .card {
   display: grid;
@@ -110,36 +110,12 @@
   font-weight: 600;
 }
 
-.nav {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+.updated {
+  color: var(--muted);
 }
 
-.step,
-.latest {
-  height: 2rem;
-  padding: 0 0.6rem;
-  background: var(--ink-2);
-  border: 1px solid var(--line-2);
-  border-radius: 7px;
-  cursor: pointer;
-}
-
-.step {
-  width: 2rem;
-  padding: 0;
-}
-
-.step:disabled,
-.latest:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.when {
-  min-width: 8.6em;
-  text-align: center;
+.updated time {
+  color: var(--text);
   font-weight: 700;
 }
 

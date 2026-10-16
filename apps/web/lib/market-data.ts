@@ -13,8 +13,14 @@ export const isSpan = (s: unknown): s is Span => typeof s === 'string' && (SPANS
 export type Zone = 'LONG' | 'SHORT' | 'NO_TRADE'
 export type Quote = { price: number; at: Date; prevClose: number | null }
 export type IndicatorRow = { tf: string; openTime: Date; zone: Zone | null; rsi: number | null; atr: number | null }
-export type AngleRow = { metric: 'global' | 'top_position'; period: string; ts: Date; angle: number | null }
+// Dilimin son noktasındaki açı (pencerede eksik nokta varsa ya da referans yetmiyorsa angle boş).
+export type AngleRow = { metric: 'global' | 'top_position'; period: string; ts: Date; angle: number | null; slope: number | null; r2: number | null }
 export type RatioRow = { metric: 'global' | 'top_position'; ts: Date; ratio: number }
+export const LS_PERIODS = ['5m', '15m', '1h', '4h'] as const
+export type LsPeriod = (typeof LS_PERIODS)[number]
+// Dilim başına L/S serisinin son 30 noktası: [an (ms), oran]. 15m, 1h ve 4h serileri core'daki gibi dilim
+// sınırındaki (UTC) 5m noktaları.
+export type LsSeries = Record<'global' | 'top_position', Record<LsPeriod, Array<[number, number]>>>
 export type BiasRow = {
   committedAt: Date
   runDate: string
@@ -31,12 +37,13 @@ export type Market = {
   indicators: IndicatorRow[]
   angles: AngleRow[]
   ratios: RatioRow[]
+  lsSeries: LsSeries
   bias: BiasRow | null
 }
 
 export async function loadMarket(): Promise<Market> {
   const pool = db()
-  const [now, last, prev, ind, ang, rat, bias, basis] = await Promise.all([
+  const [now, last, prev, ind, ang, rat, bias, basis, lsPts] = await Promise.all([
     pool.query<{ now: Date }>('SELECT now() AS now'),
     pool.query<{ close: number; t: Date }>(
       `SELECT close, open_time + interval '1 minute' AS t FROM axi_candles
@@ -49,9 +56,11 @@ export async function loadMarket(): Promise<Market> {
        FROM axi_indicators WHERE symbol = $1 ORDER BY timeframe, open_time DESC`,
       [SYMBOL],
     ),
-    pool.query<{ metric: 'global' | 'top_position'; period: string; ts: Date; angle: number }>(
-      `SELECT DISTINCT ON (metric, period) metric, period, ts, angle
-       FROM lsr_angles WHERE angle IS NOT NULL ORDER BY metric, period, ts DESC`,
+    pool.query<{ metric: 'global' | 'top_position'; period: string; ts: Date; angle: number | null; slope: number | null; r2: number | null }>(
+      `SELECT m.metric, p.period, a.ts, a.angle, a.slope, a.r2
+       FROM (VALUES ('global'), ('top_position')) m(metric)
+       CROSS JOIN (VALUES ('5m'), ('15m'), ('1h'), ('4h')) p(period)
+       CROSS JOIN LATERAL (SELECT ts, angle, slope, r2 FROM lsr_angles WHERE metric = m.metric AND period = p.period ORDER BY ts DESC LIMIT 1) a`,
     ),
     pool.query<{ metric: 'global' | 'top_position'; ts: Date; long_short_ratio: number }>(
       `SELECT DISTINCT ON (metric) metric, ts, long_short_ratio FROM lsr_series ORDER BY metric, ts DESC`,
@@ -69,16 +78,32 @@ export async function loadMarket(): Promise<Market> {
        FROM daily_bias ORDER BY committed_at DESC LIMIT 1`,
     ),
     pool.query<{ basis: number | null }>(`SELECT basis FROM heatmap_levels WHERE span = '24h' ORDER BY received_at DESC LIMIT 1`),
+    pool.query<{ metric: 'global' | 'top_position'; period: LsPeriod; t: string; v: number }>(
+      `SELECT m.metric, p.period, (extract(epoch FROM x.ts) * 1000)::bigint::text AS t, x.long_short_ratio AS v
+       FROM (VALUES ('global'), ('top_position')) m(metric)
+       CROSS JOIN (VALUES ('5m', 300), ('15m', 900), ('1h', 3600), ('4h', 14400)) p(period, s)
+       CROSS JOIN LATERAL (
+         SELECT ts, long_short_ratio FROM lsr_series
+         WHERE metric = m.metric AND extract(epoch FROM ts)::bigint % p.s = 0
+         ORDER BY ts DESC LIMIT 30
+       ) x`,
+    ),
   ])
   const l = last.rows[0]
   const b = bias.rows[0]
+  const lsSeries = Object.fromEntries(
+    (['global', 'top_position'] as const).map((m) => [m, Object.fromEntries(LS_PERIODS.map((p) => [p, [] as Array<[number, number]>]))]),
+  ) as LsSeries
+  for (const r of lsPts.rows) lsSeries[r.metric]?.[r.period]?.push([Number(r.t), r.v])
+  for (const m of Object.values(lsSeries)) for (const pts of Object.values(m)) pts.sort((a, b) => a[0] - b[0])
   return {
     now: now.rows[0]!.now,
     quote: l ? { price: l.close, at: l.t, prevClose: prev.rows[0]?.close ?? null } : null,
     basis: basis.rows[0]?.basis ?? null,
     indicators: ind.rows.map((r) => ({ tf: r.timeframe, openTime: r.open_time, zone: r.zlema_zone, rsi: r.rsi14, atr: r.atr14 })),
-    angles: ang.rows.map((r) => ({ metric: r.metric, period: r.period, ts: r.ts, angle: r.angle })),
+    angles: ang.rows.map((r) => ({ metric: r.metric, period: r.period, ts: r.ts, angle: r.angle, slope: r.slope, r2: r.r2 })),
     ratios: rat.rows.map((r) => ({ metric: r.metric, ts: r.ts, ratio: r.long_short_ratio })),
+    lsSeries,
     bias: b
       ? {
           committedAt: b.committed_at,
@@ -98,8 +123,6 @@ export type Cluster = { rank: number; price: number; usd: number }
 export type HeatView = {
   span: Span
   snapshot: { id: number; at: string } // at: heatmap'in alındığı an (received_at)
-  prevId: number | null
-  nextId: number | null
   basis: number | null
   ref: number | null // CoinGlass referans fiyatı (kaydırılmamış)
   up: Cluster[] // Axi fiyatına kaydırılmış, fiyata göre yakından uzağa; numara core'daki sıra (up1 en büyük)
@@ -154,14 +177,7 @@ export async function loadHeatView(span: Span, id: number | null): Promise<HeatV
   const s = snaps[0]
   if (!s) return null
   const sid = Number(s.id)
-  const [lv, nb] = await Promise.all([
-    pool.query<LevelsRow>(`SELECT * FROM heatmap_levels WHERE snapshot_id = $1`, [sid]),
-    pool.query<{ prev: string | null; next: string | null }>(
-      `SELECT (SELECT id FROM heatmap_snapshots WHERE span = $1 AND received_at < $2 ORDER BY received_at DESC LIMIT 1) AS prev,
-              (SELECT id FROM heatmap_snapshots WHERE span = $1 AND received_at > $2 ORDER BY received_at LIMIT 1) AS next`,
-      [span, s.received_at],
-    ),
-  ])
+  const lv = await pool.query<LevelsRow>(`SELECT * FROM heatmap_levels WHERE snapshot_id = $1`, [sid])
   const l = lv.rows[0] ?? null
   const basis = l?.basis ?? null
   let grid: HeatGrid | null = null
@@ -174,8 +190,6 @@ export async function loadHeatView(span: Span, id: number | null): Promise<HeatV
   return {
     span,
     snapshot: { id: sid, at: s.received_at.toISOString() },
-    prevId: nb.rows[0]?.prev ? Number(nb.rows[0].prev) : null,
-    nextId: nb.rows[0]?.next ? Number(nb.rows[0].next) : null,
     basis,
     ref: l?.ref_price ?? null,
     up: l ? clusters(l, 'up', shift) : [],

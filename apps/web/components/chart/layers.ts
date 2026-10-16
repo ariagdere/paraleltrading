@@ -112,7 +112,8 @@ abstract class Layer implements ISeriesPrimitive<Time> {
 const BUCKETS = 24
 
 // Heatmap: hücreler (koyuluk likidasyon miktarı, 0,7 üslü ölçek), snapshot anı çizgisi ve sağ kenarda fiyat
-// seviyesine göre toplam likidasyon profili (uzun aralıkta ısının kapsamadığı yerde de görünür).
+// seviyesine göre toplam likidasyon profili (uzun aralıkta ısının kapsamadığı yerde de görünür). Son sütun (snapshot
+// anındaki seviyeler) grafiğin sağ kenarına kadar uzar: snapshot'tan sonraki mumların arkasında boşluk kalmaz.
 export class HeatLayer extends Layer {
   private grid: HeatGrid | null = null
   private at: number | null = null
@@ -154,12 +155,12 @@ export class HeatLayer extends Layer {
     return { priceRange: { minValue: this.extent[0], maxValue: this.extent[1] } }
   }
 
-  // imlecin altındaki hücrenin likidasyonu ($)
+  // imlecin altındaki hücrenin likidasyonu ($); snapshot'tan sonrası son sütun
   valueAt(t: number, price: number): number | null {
     const g = this.grid
     if (!g || g.cols.length === 0) return null
-    const col = Math.floor((t - g.cols[0]!) / g.step)
-    if (col < 0 || col >= g.cols.length) return null
+    const col = Math.min(g.cols.length - 1, Math.floor((t - g.cols[0]!) / g.step))
+    if (col < 0) return null
     let li = -1
     let best = Infinity
     for (let i = 0; i < g.levels.length; i++) {
@@ -205,7 +206,7 @@ export class HeatLayer extends Layer {
         ctx.fillStyle = rgba(this.color, Math.min(0.92, 0.04 + 0.88 * ((b + 0.5) / BUCKETS) ** 0.7))
         for (const i of idx) {
           const x0 = colX[c[i]!]!
-          const x1 = colX[c[i]! + 1]!
+          const x1 = c[i] === nc - 1 ? Math.max(colX[nc]!, W) : colX[c[i]! + 1]!
           if (!(x1 >= 0 && x0 <= W)) continue
           const y0 = top[c[i + 1]!]!
           const y1 = bot[c[i + 1]!]!

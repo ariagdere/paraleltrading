@@ -2,10 +2,10 @@
 
 web, Hakari 2'nin tarayıcıdan açılan yüzü. İki sayfa var:
 
-- **Piyasa** (girişten sonra açılan sayfa): Axi BTCUSD fiyatı; tek temel grafik ve düğmeyle açılıp kapanan katmanlar (likidasyon heatmap'i, cluster'lar, destek/direnç bölgeleri, önceki gün/hafta seviyeleri); ZLEMA/RSI/ATR, Long/Short oranı ve açıları, günlük bias.
+- **Piyasa** (girişten sonra açılan sayfa): canlı Axi BTCUSD fiyatı; tek temel grafik (oluşan mum canlı) ve düğmeyle açılıp kapanan katmanlar (likidasyon heatmap'i, cluster'lar, destek/direnç bölgeleri, önceki gün/hafta seviyeleri); ZLEMA/RSI/ATR, Long/Short oranı, açıları ve son 30 noktanın grafikleri, günlük bias.
 - **Sağlık**: her veri kaynağının son verisinin ne zaman geldiği, sıradakinin ne zaman beklendiği, gecikenler ve hatalar.
 
-collector ve core'la aynı repodan üçüncü bir servis. Veritabanına yalnız okumak için bağlanır: oturumlar salt okunur açılır (`default_transaction_read_only`), web hiçbir tabloya yazamaz. Kullanıcı adı ve şifre Railway değişkenlerinde; giriş yapılmadan hiçbir sayfa ve veri açılmaz.
+collector ve core'la aynı repodan üçüncü bir servis. Veritabanına yalnız okumak için bağlanır: oturumlar salt okunur açılır (`default_transaction_read_only`), web hiçbir tabloya yazamaz. Kullanıcı adı ve şifre Railway değişkenlerinde; giriş yapılmadan hiçbir sayfa ve veri açılmaz. Canlı fiyat için MetaApi'ye tek bir streaming bağlantısı açar (yalnız BTCUSD quote'ları; işlem yapmaz, hesabı deploy etmez).
 
 ## 1. Servisi aç
 
@@ -40,10 +40,20 @@ Aynı projede New → GitHub Repo → `ariagdere/paraleltrading`. Yeni servisin 
 | `WEB_USER` | giriş kullanıcı adı (istediğin bir ad) |
 | `WEB_PASSWORD` | giriş şifresi (uzun ve başka yerde kullanmadığın bir şifre) |
 | `WEB_SESSION_SECRET` | oturum imzası için uzun rastgele bir değer (parola yöneticisinden 40+ karakter) |
+| `METAAPI_TOKEN` | canlı fiyat için, collector'daki gibi: `${{shared.METAAPI_TOKEN}}` |
+| `METAAPI_ACCOUNT_ID` | `${{shared.METAAPI_ACCOUNT_ID}}` |
+| `METAAPI_REGION` | yalnız hesap london dışındaysa (collector'da da öyle) |
 
 - `WEB_USER` ya da `WEB_PASSWORD` yoksa hiçbir sayfa açılmaz; giriş sayfası hangi değişkenin eksik olduğunu yazar.
 - `WEB_SESSION_SECRET` yoksa imza için `DATABASE_URL` kullanılır; çalışır ama ayrı bir değer daha iyi.
 - Şifreyi ya da `WEB_SESSION_SECRET`'ı değiştirmek bütün açık oturumları kapatır (yeniden giriş gerekir).
+- `METAAPI_TOKEN` ya da `METAAPI_ACCOUNT_ID` yoksa canlı fiyat kapalıdır: sayfa fiyatı ve oluşan mumu dakikalık 1m mumlarından gösterir, başlıkta "(canlı fiyat kapalı)" yazar.
+- Canlı fiyat bağlantısı (ayrıntı 7. bölümde):
+  - eski dashboard'unkiyle aynı hesaba açılır; hesap başına 10 streaming aboneliği sınırı var, bu üçüncüsü (eski sistemin monitor'ü ve dashboard'u ile);
+  - streaming REST/RPC kredisi tüketmez. Quote başına 2 market data kredisi harcanır; hesabın bütçesi 10 sn'de 31.500 kredi, BTCUSD'nin saniyede birkaç quote'u bunun çok altında;
+  - MetaApi ücreti hesabın deploy süresine göre (eski dashboard'un notu: her deploy en az 6 saat faturalanıyor); web hesabı deploy etmediği için ek ücret beklenmez. İlk gün MetaApi faturalama sayfasına bakmak yine de iyi olur;
+  - web hesabı asla deploy/undeploy etmez. Hesap deploy'lu değilse başlıkta "(canlı fiyata bağlanılamadı)" yazar, loglara `[web] canlı fiyat akışı başlatılamadı: ...` düşer; sayfa açıkken 30 sn'de bir yeniden dener.
+  - Token eski dashboard'unkinden farklı ve yalnız geçmiş mum API'sine yetkiliyse bağlantı reddedilir; o zaman eski dashboard'un token'ını kullan.
 
 ## 4. Adres (Networking)
 
@@ -59,6 +69,7 @@ Build loglarında:
   Finished TypeScript ...
 Route (app)
 ├ ƒ /api/piyasa/bolgeler
+├ ƒ /api/piyasa/canli
 ├ ƒ /api/piyasa/heatmap
 ├ ƒ /api/piyasa/mumlar
 ├ ƒ /login
@@ -74,7 +85,7 @@ Deploy loglarında:
 ✓ Ready in ...
 ```
 
-Adresi açınca giriş sayfası gelir. Girişten sonra Piyasa sayfası açılır; loglara `[web] giriş yapıldı (IP)` düşer. Hatalı denemeler `[web] giriş: hatalı (IP, 3/10)` olarak görünür.
+Adresi açınca giriş sayfası gelir. Girişten sonra Piyasa sayfası açılır; loglara `[web] giriş yapıldı (IP)` düşer. Hatalı denemeler `[web] giriş: hatalı (IP, 3/10)` olarak görünür. MetaApi değişkenleri varsa Piyasa ilk açıldığında birkaç saniye ile birkaç dakika içinde `[web] canlı fiyat akışı hazır: BTCUSD` düşer.
 
 - Yalnız `apps/web`'i değiştiren bir merge yalnız web'i yeniden deploy eder; collector ve core çalışmaya devam eder.
 - `packages/db`'yi ya da `package-lock.json`'u değiştiren bir merge collector ve core'u da yeniden başlatır. Heatmap turuna denk gelmesin diye böyle merge'leri xx:00–xx:06 dışında yap.
@@ -88,32 +99,37 @@ Adresi açınca giriş sayfası gelir. Girişten sonra Piyasa sayfası açılır
 
 ## 7. Piyasa sayfası
 
-Sayfa dakikada bir kendini yeniler (sekme arka plandaysa yenilemez). Bütün saatler İstanbul saati; fiyatlar Axi BTCUSD.
+Sayfa dakikada bir kendini yeniler (sekme arka plandaysa yenilemez); fiyat ve oluşan mum canlı akışla anlık. Bütün saatler İstanbul saati; fiyatlar Axi BTCUSD.
 
-- **Üst satır:** son 1m mumunun kapanışı, dünkü günlük kapanıştan değişim; baz (en yeni 24h heatmap'te CoinGlass ile Axi fiyat farkı), ATR 4h, günlük bias.
+- **Üst satır:** canlı fiyat (son quote'un bid'i; Axi mumları da bid'den) ve saati, akış yoksa son 1m mumunun kapanışı; dünkü günlük kapanıştan değişim; baz (en yeni 24h heatmap'te CoinGlass ile Axi fiyat farkı), ATR 4h, günlük bias.
 - **Grafik:** tek temel grafik, Axi mumları. Dilim düğmeleri 5m, 15m, 1h, 4h, 1d (açılışta 15m).
   - Sürükleyerek geçmişe kaydırılır, tekerlekle yakınlaştırılır, fiyat ekseni sürüklenerek dikeyde ölçeklenir. Sola kaydırdıkça daha eski mumlar okunur.
-  - Beyaz etiketli çizgi son 1m kapanışı.
+  - Son mum oluşan mum: kayıtlı son mumdan sonrası kapanmış 1m mumlarından, canlı akış varken her quote'la güncellenir; dilim dolunca yeni mum açılır. Collector dilimin mumunu yazınca yerine o geçer. Her yeni 1m mumunda oluşan mumun açılış, tepe ve dibi 1m mumlarıyla düzeltilir (quote'larla görülen uçlar korunur).
+  - Beyaz etiketli çizgi canlı fiyat (akış yoksa son 1m kapanışı).
   - İmleç mumun açılış, tepe, dip ve kapanışını, imlecin fiyatını, altındaki heatmap hücresinin likidasyonunu ve imleç bir bölgenin içindeyse o bölgeyi gösterir.
 - **Katman düğmeleri** (aynı zamanda lejant; seçimler, dilim ve heatmap penceresi tarayıcıda hatırlanır):
-  - **Heatmap:** CoinGlass model1 likidasyon seviyeleri mumların arkasında; koyuluk o fiyattaki likidasyon miktarı, kesik dikey çizgi heatmap'in alındığı an. Sağ kenardaki gri çubuklar fiyat seviyesine göre toplam likidasyon (profil); heatmap'in kapsamadığı uzun aralıklarda da görünür. Heatmap ve cluster'lar baz kadar kaydırılır, yani Axi fiyatıyla çizilir; snapshot anına ait Axi mumu yoksa CoinGlass fiyatıyla çizilir ve altta yazar.
+  - **Heatmap:** CoinGlass model1 likidasyon seviyeleri mumların arkasında; koyuluk o fiyattaki likidasyon miktarı, kesik dikey çizgi heatmap'in alındığı an. Son sütun (o anki seviyeler) grafiğin sağ kenarına kadar uzar. Sağ kenardaki gri çubuklar fiyat seviyesine göre toplam likidasyon (profil); heatmap'in kapsamadığı uzun aralıklarda da görünür. Heatmap ve cluster'lar baz kadar kaydırılır, yani Axi fiyatıyla çizilir; snapshot anına ait Axi mumu yoksa CoinGlass fiyatıyla çizilir ve altta yazar.
   - **Cluster'lar:** core'un `heatmap_levels` tablosundan, fiyatın üstünde ve altında en çok üçer çizgi. Numara core'daki sıra: 1 eski sistemin kullandığı en büyük cluster (düz çizgi), 2 ve 3 aynı kuralın kalan seviyelerde tekrarı (kesik). Grafiğin sağ ucu görünürken fiyat ekseni fiyatın %6'sından yakın en yakın cluster'ları da kapsar.
   - **Destek/direnç:** yalnız core'un gösterdiği bölgeler: fiyatın ±%5'inde, üstte ve altta en güçlü 3 ve fiyatın içinde olduğu bölge. Her biri belirdiği andan sağ kenara sabit bir mor bant; sağda gücü yazar (heatmap açıksa profilin solunda). Seçim her 4h kapanışında yenilenir; gösterilen bir bölgenin yerine ancak iki kat güçlü bir bölge geçer.
   - **Önceki gün/hafta:** dünün tepe ve dibi (pdh, pdl), geçen haftanın tepe, dip, açılış ve kapanışı (pwh, pwl, pwo, pwc); kesik çizgiler. Gün 00:00'da, hafta pazartesi 00:00'da (İstanbul) başlar.
-- **Heatmap penceresi** (heatmap ya da cluster katmanı açıkken): 12h, 24h, 48h (açılışta 24h). ‹ ve › bir önceki ve sonraki snapshot'a gider; "En yeni" yeniden en yeni snapshot'ı izler. En yeni izlenirken dakikalık yenileme o pencerenin yeni snapshot'ını getirir; eski bir snapshot açıkken grafik yerinde kalır.
+- **Heatmap penceresi** (heatmap ya da cluster katmanı açıkken): 12h, 24h, 48h (açılışta 24h) ve son güncelleme anı. Hep pencerenin en yeni snapshot'ı gösterilir; dakikalık yenileme yenisini getirir. Geçmiş snapshot'lar veritabanında; simülasyonda kullanılacak (API'de `&id=` ile okunabilir).
 - **Grafiğin altında** yalnız açık katmanların ayrıntısı: gösterilen bölgeler yukarıdan aşağı, aralarında fiyat (bant, uzaklık, güç, kaynak: gücün çoğunun geldiği dilim, test, tuttu, kırıldı, belirdiği gün); cluster'lar ve bant likiditesi (referansın %1, %2 ve %3 altı ve üstü); önceki gün ve hafta seviyeleri.
-- **Yan sütun:** ZLEMA, RSI ve ATR (15m, 1h, 4h ve 1d'nin kapanmış son mumu, `axi_indicators`); Long/Short (Binance global ve top trader oranı, 5m–4h açıları); günlük bias (son rapor: yön, güven, net yön, skor, sonuç metni).
-- Grafik kütüphanesi TradingView Lightweight Charts (Apache 2.0); lisans gereği grafiğin köşesinde TradingView logosu ve sayfada atıf var.
+- **Yan sütun:** ZLEMA, RSI ve ATR (15m, 1h, 4h ve 1d'nin kapanmış son mumu, `axi_indicators`); Long/Short; günlük bias (son rapor: yön, güven, net yön, skor, sonuç metni).
+- **Long/Short:** Binance global ve top trader oranı ve dört dilimin açısı (son noktanın; pencerede eksik nokta varsa boş), eski sistemin live ekranındaki gibi seçili dilimin son 30 noktasının grafiği: oran, ortalaması (noktalı) ve açının hesaplandığı doğru (kesik; yükselen yeşil, düşen turuncu). Dilim düğmeleri 5m, 15m, 1h, 4h (açılışta 5m, seçim hatırlanır). 15m, 1h ve 4h serileri core'daki gibi dilim sınırındaki (UTC) 5m noktaları.
+- Grafik kütüphanesi TradingView Lightweight Charts (Apache 2.0); lisans gereği fiyat grafiğinin köşesinde TradingView logosu ve sayfada atıf var.
 
 Grafik verisini API verir; uçlar giriş ister ve önbelleğe alınmaz:
 
 | Uç | Ne verir |
 |---|---|
-| `/api/piyasa/mumlar?tf=1h[&before=<ms>\|&after=<ms>][&n=600]` | Axi mumları, eskiden yeniye: en yeni n, ya da bir andan önceki n (geçmişe kaydırınca), ya da bir andan sonrakiler (yeni kapanışlar). n en çok 2000 |
+| `/api/piyasa/mumlar?tf=1h[&before=<ms>\|&after=<ms>][&n=600]` | Axi mumları, eskiden yeniye: en yeni n, ya da bir andan önceki n (geçmişe kaydırınca), ya da bir andan sonrakiler (yeni kapanışlar). n en çok 2000. `forming`: henüz kaydedilmemiş oluşan mumlar (önceki ve şimdiki aralık, 1m mumlarından; before'da yok) |
 | `/api/piyasa/bolgeler` | core'un son sürümünün geçerli bölgeleri ve hangilerinin gösterileceği |
-| `/api/piyasa/heatmap?span=24h[&id=<snapshot>]` | snapshot'ın ısı ızgarası, cluster'ları, bant likiditesi ve bazı; önceki ve sonraki snapshot |
+| `/api/piyasa/heatmap?span=24h[&id=<snapshot>]` | pencerenin en yeni (ya da id'si verilen) snapshot'ının ısı ızgarası, cluster'ları, bant likiditesi ve bazı |
+| `/api/piyasa/canli` | canlı fiyat akışı (Server-Sent Events): `hello` (akışın durumu, son quote), `quote` (bid, ask, an; istemci başına en çok 250 ms'de bir), hazır değilken 5 sn'de bir `status`; 15 sn'de bir boş satır |
 
-Sayfanın dakikalık yenilemesi büyük veriyi yeniden göndermez, yalnız "değişti mi" işaretlerini taşır: yeni 1m mumu gelince grafik seçili dilimin son mumlarını, core bölgeleri yeniden hesaplayınca bölgeleri, seçili pencerede yeni snapshot olunca heatmap'i okur.
+Sayfanın dakikalık yenilemesi büyük veriyi yeniden göndermez, yalnız "değişti mi" işaretlerini taşır: yeni 1m mumu gelince grafik seçili dilimin son mumlarını, core bölgeleri yeniden hesaplayınca bölgeleri, seçili pencerede yeni snapshot olunca heatmap'i okur. L/S grafiklerinin noktaları sayfayla gelir (8 seri × 30 nokta).
+
+Canlı akış tarayıcıda sekme başına tek bağlantı; sekme 30 sn arka planda kalınca kapanır, dönünce yeniden açılır. Sunucuda bütün tarayıcılar MetaApi'ye açılan tek bağlantıyı paylaşır. 30 sn quote gelmezse (piyasa arası) başlıkta "son quote" ve saati yazar, grafik son 1m kapanışına döner.
 
 ## 8. Sağlık sayfası nasıl karar veriyor
 

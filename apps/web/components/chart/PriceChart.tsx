@@ -19,6 +19,8 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CHART_TFS, TF_MS, type CandleRow, type ChartTf, type ChartTokens, type ChartZone, type PrevLevels, type Zones } from '@/lib/chart-shared'
 import type { HeatView, Span } from '@/lib/market-data'
+import { useLive, type LiveQuote } from '../live'
+import { applyQuote, mergeTail, type CandleBody } from './bars'
 import { HeatLevels, PrevList, ZoneList } from './details'
 import { dmh, fmt1, fmtP, hm, usd } from './format'
 import { HeatLayer, TimeAxis, ZoneLayer, bandAt, rgba } from './layers'
@@ -26,9 +28,11 @@ import s from './price-chart.module.css'
 
 // Temel fiyat grafiği: Axi mumları (5m–1d, sürükleyerek geçmişe kaydırılır, tekerlekle yakınlaştırılır) ve
 // düğmeyle açılıp kapanan katmanlar: heatmap (ısı ve sağ kenarda likidasyon profili), cluster'lar, destek/direnç
-// bölgeleri, önceki gün/hafta seviyeleri. Veriyi API'den okur; sayfanın dakikalık yenilemesi yalnız "değişti mi"
-// işaretlerini getirir: yeni 1m mumu gelince son mumlar, bölgeler yeniden hesaplanınca bölgeler, seçili pencerede
-// yeni snapshot olunca heatmap okunur. Seçimler (dilim, katmanlar, pencere) tarayıcıda hatırlanır.
+// bölgeleri, önceki gün/hafta seviyeleri. Sondaki mumlar oluşan mumlar: kayıtlı son mumdan sonrası 1m mumlarından;
+// canlı akış varken her quote'la (bid) güncellenir, dilim dolunca yeni mum açılır. Veriyi API'den okur; sayfanın
+// dakikalık yenilemesi yalnız "değişti mi" işaretlerini getirir: yeni 1m mumu gelince son mumlar, bölgeler yeniden
+// hesaplanınca bölgeler, seçili pencerede yeni snapshot olunca heatmap okunur. Seçimler (dilim, katmanlar, pencere)
+// tarayıcıda hatırlanır.
 
 // İstanbul UTC+3 ve yaz saati yok: zamanlar 3 saat kaydırılır, kütüphanenin UTC ekseni İstanbul saatini gösterir.
 const SHIFT = 3 * 3600
@@ -37,6 +41,7 @@ const toBar = (r: CandleRow): CandlestickData<Time> => ({ time: toChart(r[0]), o
 const VISIBLE: Record<ChartTf, number> = { '5m': 144, '15m': 192, '1h': 168, '4h': 180, '1d': 180 } // açılışta görünen mum
 const LOAD = 600 // bir okumada mum
 const SPANS: Span[] = ['12h', '24h', '48h']
+const LIST_PRICE_MS = 5000 // alttaki listelerde fiyat en çok bu sıklıkta değişir
 
 type LayerKey = 'heat' | 'clusters' | 'zones' | 'prev'
 type Prefs = { tf: ChartTf; span: Span; layers: Record<LayerKey, boolean> }
@@ -116,8 +121,8 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
   const [error, setError] = useState<string | null>(null)
   const [zones, setZones] = useState<ChartZone[]>([])
   const [heat, setHeat] = useState<HeatView | null>(null)
-  const [follow, setFollow] = useState(true) // en yeni snapshot izleniyor
   const [heatBusy, setHeatBusy] = useState(false)
+  const live = useLive()
 
   const box = useRef<HTMLDivElement>(null)
   const host = useRef<HTMLDivElement>(null)
@@ -128,7 +133,11 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
   const heatLayer = useRef<HeatLayer | null>(null)
   const zoneLayer = useRef<ZoneLayer | null>(null)
   const colors = useRef<Colors | null>(null)
-  const rows = useRef<CandleRow[]>([]) // yüklü mumlar, eskiden yeniye
+  const rows = useRef<CandleRow[]>([]) // ekrandaki mumlar, eskiden yeniye: önce kayıtlılar, sonra oluşanlar
+  const stored = useRef(0) // rows'un baştan kaçı kayıtlı (kapanmış) mum
+  const drawn = useRef(0) // seride kaç mum var
+  const rowsTf = useRef<ChartTf | null>(null) // rows hangi dilimin
+  const quote = useRef<LiveQuote | null>(null) // son taze quote (akış canlıyken)
   const tfRef = useRef<ChartTf>(DEFAULT_PREFS.tf)
   const seq = useRef(0) // dilim değişince süren okumalar yok sayılır
   const older = useRef({ busy: false, done: false })
@@ -162,12 +171,30 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
       TF_MS[tf],
     )
     se.setData(rows.current.map(toBar))
+    drawn.current = rows.current.length
     if (resetView) {
       const n = rows.current.length
       ch.timeScale().setVisibleLogicalRange({ from: n - VISIBLE[tf], to: n + 6 })
     }
     heatLayer.current?.update()
     zoneLayer.current?.update()
+  }, [])
+
+  // Sondaki mumları seriye işler (from'dan sona; eskiler yerinde güncellenir, yeniler eklenir).
+  const redrawFrom = useCallback((from: number) => {
+    const se = series.current
+    if (!se) return
+    const cur = rows.current
+    for (let i = from; i < cur.length; i++) se.update(toBar(cur[i]!), i < drawn.current - 1)
+    if (cur.length !== drawn.current) {
+      axis.current.set(
+        cur.map((r) => r[0]),
+        TF_MS[tfRef.current],
+      )
+      heatLayer.current?.update()
+      zoneLayer.current?.update()
+    }
+    drawn.current = cur.length
   }, [])
 
   // Geçmişe kaydırınca daha eski mumlar.
@@ -179,7 +206,7 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
       o.busy = true
       const tf = tfRef.current
       const n = seq.current
-      getJson<{ rows: CandleRow[] }>(`/api/piyasa/mumlar?tf=${tf}&before=${rows.current[0]![0]}&n=${LOAD}`)
+      getJson<CandleBody>(`/api/piyasa/mumlar?tf=${tf}&before=${rows.current[0]![0]}&n=${LOAD}`)
         .then((body) => {
           if (n !== seq.current || !chart.current) return
           if (body.rows.length < LOAD) o.done = true
@@ -187,6 +214,7 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
           const ts = chart.current.timeScale()
           const range = ts.getVisibleLogicalRange()
           rows.current = [...body.rows, ...rows.current]
+          stored.current += body.rows.length
           applyRows(false)
           if (range) ts.setVisibleLogicalRange({ from: range.from + body.rows.length, to: range.to + body.rows.length })
           setCount(rows.current.length)
@@ -349,13 +377,17 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
     older.current = { busy: false, done: false }
     setLoading(true)
     setError(null)
-    getJson<{ rows: CandleRow[] }>(`/api/piyasa/mumlar?tf=${tf}&n=${LOAD}`)
+    getJson<CandleBody>(`/api/piyasa/mumlar?tf=${tf}&n=${LOAD}`)
       .then((body) => {
         if (n !== seq.current) return
-        rows.current = body.rows
+        const lastStored = body.rows[body.rows.length - 1]?.[0] ?? -Infinity
+        rows.current = [...body.rows, ...body.forming.filter((f) => f[0] > lastStored)]
+        stored.current = body.rows.length
+        rowsTf.current = tf
+        if (quote.current) applyQuote(rows.current, stored.current, quote.current, TF_MS[tf])
         older.current.done = body.rows.length < LOAD
         applyRows(true)
-        setCount(body.rows.length)
+        setCount(rows.current.length)
       })
       .catch((err) => {
         if (n === seq.current) setError(`Mumlar okunamadı: ${(err as Error).message}`)
@@ -365,39 +397,58 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
       })
   }, [prefs.tf, ready, applyRows])
 
-  // Yeni 1m mumu geldi: seçili dilimin son mumları (son mum da yeniden: düzeltilmiş olabilir).
+  // Yeni 1m mumu geldi: seçili dilimin son mumları (son iki kayıtlı mumdan başlayarak: düzeltilmiş olabilirler) ve
+  // oluşan mumlar; ardından son quote yeniden işlenir (kapanış geri gitmesin).
   const lastCandle = useRef(tokens.candle)
   useEffect(() => {
     if (tokens.candle === lastCandle.current) return
     lastCandle.current = tokens.candle
-    const last = rows.current[rows.current.length - 1]
-    const se = series.current
-    if (!last || !se) return
+    const cur = rows.current
+    if (cur.length === 0 || !series.current || rowsTf.current !== tfRef.current) return
     const tf = tfRef.current
     const n = seq.current
-    getJson<{ rows: CandleRow[] }>(`/api/piyasa/mumlar?tf=${tf}&after=${last[0] - 1}&n=50`)
+    const base = cur[Math.max(0, stored.current - 2)]![0]
+    getJson<CandleBody>(`/api/piyasa/mumlar?tf=${tf}&after=${base - 1}&n=50`)
       .then((body) => {
         if (n !== seq.current || !series.current) return
         const cur = rows.current
-        for (const r of body.rows) {
-          const i = cur.length - 1
-          if (r[0] === cur[i]![0]) cur[i] = r
-          else if (r[0] > cur[i]![0]) cur.push(r)
-          else continue
-          series.current.update(toBar(r))
-        }
-        axis.current.set(
-          cur.map((r) => r[0]),
-          TF_MS[tf],
-        )
-        heatLayer.current?.update()
-        zoneLayer.current?.update()
+        const m = mergeTail(cur, stored.current, body)
+        stored.current = m.stored
+        let from = m.from
+        if (quote.current && applyQuote(cur, stored.current, quote.current, TF_MS[tf]) !== 'none')
+          from = from < 0 ? cur.length - 1 : Math.min(from, cur.length - 1)
+        if (m.inserted) applyRows(false)
+        else if (from >= 0) redrawFrom(from)
         setCount(cur.length)
       })
       .catch(() => {
         // bir sonraki dakika yeniden
       })
-  }, [tokens.candle])
+  }, [tokens.candle, applyRows, redrawFrom])
+
+  // Canlı quote: oluşan mum ve fiyat çizgisi. Akış canlı değilken (kapalı, sessiz, hata) son 1m kapanışı.
+  const liveQuote = live.state === 'live' ? live.quote : null
+  useEffect(() => {
+    quote.current = liveQuote
+    const cur = rows.current
+    if (!liveQuote || !series.current || cur.length === 0 || rowsTf.current !== tfRef.current) return
+    const r = applyQuote(cur, stored.current, liveQuote, TF_MS[tfRef.current])
+    if (r === 'none') return
+    redrawFrom(cur.length - 1)
+    if (r === 'added') setCount(cur.length)
+  }, [liveQuote, redrawFrom])
+  const shownPrice = liveQuote ? liveQuote.bid : price
+
+  // Alttaki listelerin fiyatı (bölgelere uzaklık, cluster yüzdeleri): canlı fiyat en çok 5 sn'de bir.
+  const [listPrice, setListPrice] = useState<number | null>(price)
+  const listAt = useRef(0)
+  useEffect(() => {
+    if (shownPrice === null) return
+    const now = Date.now()
+    if (liveQuote && now - listAt.current < LIST_PRICE_MS) return
+    listAt.current = now
+    setListPrice(shownPrice)
+  }, [shownPrice, liveQuote])
 
   // Bölgeler: açılışta ve core yeniden hesaplayınca.
   useEffect(() => {
@@ -406,17 +457,17 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
       .catch((err) => setError(`Bölgeler okunamadı: ${(err as Error).message}`))
   }, [tokens.zones])
 
-  // Heatmap: heatmap ya da cluster katmanı açıksa; en yeni izlenirken seçili pencerede yeni snapshot gelince.
+  // Heatmap: heatmap ya da cluster katmanı açıksa, seçili pencerenin en yeni snapshot'ı; yenisi gelince yeniden.
   const heatSeq = useRef(0)
-  const loadHeat = useCallback(async (span: Span, id: number | null) => {
+  const loadHeat = useCallback(async (span: Span) => {
     const n = ++heatSeq.current
     setHeatBusy(true)
     try {
-      const v = await getJson<HeatView>(`/api/piyasa/heatmap?span=${span}${id !== null ? `&id=${id}` : ''}`)
+      const v = await getJson<HeatView>(`/api/piyasa/heatmap?span=${span}`)
       if (n === heatSeq.current) setHeat(v)
     } catch (err) {
       if (n !== heatSeq.current) return
-      if (err instanceof HttpError && err.status === 404 && id === null) setHeat(null)
+      if (err instanceof HttpError && err.status === 404) setHeat(null)
       else setError(`Heatmap okunamadı: ${(err as Error).message}`)
     } finally {
       if (n === heatSeq.current) setHeatBusy(false)
@@ -424,14 +475,14 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
   }, [])
   const wantHeat = prefs.layers.heat || prefs.layers.clusters
   const latestId = tokens.heat[prefs.span]
-  const heatAsked = useRef<string | null>(null) // en yeni hangi pencere ve işaret için istendi
+  const heatAsked = useRef<string | null>(null) // hangi pencere ve işaret için istendi
   useEffect(() => {
-    if (!ready || !wantHeat || !follow) return
+    if (!ready || !wantHeat) return
     const key = `${prefs.span}:${latestId}`
     if (heatAsked.current === key) return
     heatAsked.current = key
-    void loadHeat(prefs.span, null)
-  }, [ready, wantHeat, follow, prefs.span, latestId, loadHeat])
+    void loadHeat(prefs.span)
+  }, [ready, wantHeat, prefs.span, latestId, loadHeat])
 
   useEffect(() => {
     const at = heat ? Date.parse(heat.snapshot.at) : null
@@ -487,7 +538,7 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
 
   // Fiyat ekseni en yakın cluster'ları da kapsasın (fiyatın %6'sından yakınsa).
   useEffect(() => {
-    const ref = price
+    const ref = listPrice
     if (!prefs.layers.clusters || !heat || ref === null) {
       heatLayer.current?.setExtent(null)
       return
@@ -496,7 +547,7 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
     const up = [...heat.up].sort((a, b) => a.price - b.price).find((c) => c.price > ref)
     const dn = [...heat.dn].sort((a, b) => b.price - a.price).find((c) => c.price < ref)
     heatLayer.current?.setExtent([near(dn), near(up)])
-  }, [heat, price, prefs.layers.clusters])
+  }, [heat, listPrice, prefs.layers.clusters])
 
   // Önceki gün ve hafta seviyeleri: kesik çizgiler.
   useEffect(() => {
@@ -531,11 +582,12 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
     }
   }, [prev, prefs.layers.prev])
 
-  // Son fiyat (son 1m kapanışı): eksende beyaz etiket.
+  // Son fiyat (canlı quote, yoksa son 1m kapanışı): eksende beyaz etiket.
   useEffect(() => {
     const se = series.current
     const C = colors.current
-    if (!se || !C || price === null) return
+    if (!se || !C || shownPrice === null) return
+    const price = shownPrice
     if (!lines.current.live)
       lines.current.live = se.createPriceLine({
         price,
@@ -548,7 +600,7 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
         title: '',
       })
     else lines.current.live.applyOptions({ price })
-  }, [price])
+  }, [shownPrice])
 
   const setLayer = (k: LayerKey) => setPrefs((p) => ({ ...p, layers: { ...p.layers, [k]: !p.layers[k] } }))
   const at = heat ? Date.parse(heat.snapshot.at) : null
@@ -579,53 +631,14 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
           <span className={s.heatLabel}>Heatmap</span>
           <div className={s.seg} role="radiogroup" aria-label="Heatmap penceresi">
             {SPANS.map((sp) => (
-              <button
-                key={sp}
-                type="button"
-                role="radio"
-                aria-checked={prefs.span === sp}
-                onClick={() => {
-                  heatAsked.current = null
-                  setPrefs((p) => ({ ...p, span: sp }))
-                  setFollow(true)
-                }}
-              >
+              <button key={sp} type="button" role="radio" aria-checked={prefs.span === sp} onClick={() => setPrefs((p) => ({ ...p, span: sp }))}>
                 {sp}
               </button>
             ))}
           </div>
-          <div className={s.nav}>
-            <button
-              type="button"
-              className={s.step}
-              aria-label="Önceki snapshot"
-              disabled={!heat?.prevId || heatBusy}
-              onClick={() => heat?.prevId && (setFollow(false), void loadHeat(prefs.span, heat.prevId))}
-            >
-              ‹
-            </button>
-            <span className={`${s.when} num`}>{at ? dmh.format(at) : '—'}</span>
-            <button
-              type="button"
-              className={s.step}
-              aria-label="Sonraki snapshot"
-              disabled={!heat?.nextId || heatBusy}
-              onClick={() => heat?.nextId && (setFollow(false), void loadHeat(prefs.span, heat.nextId))}
-            >
-              ›
-            </button>
-            <button
-              type="button"
-              className={s.latest}
-              disabled={follow || heatBusy}
-              onClick={() => {
-                heatAsked.current = null
-                setFollow(true)
-              }}
-            >
-              En yeni
-            </button>
-          </div>
+          <p className={s.updated}>
+            Son güncelleme <time className="num">{at ? dmh.format(at) : '—'}</time>
+          </p>
           {prefs.layers.heat && maxUsd !== null && (
             <div className={s.scale} aria-label={`Isı ölçeği: 0'dan ${usd(maxUsd)}'a`}>
               <span className="num">0</span>
@@ -646,10 +659,10 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
         {count === 0 && <p className={s.empty}>Bu dilimde henüz mum yok.</p>}
       </div>
       <div className={s.details}>
-        {prefs.layers.zones && <ZoneList zones={shownZones} price={price} />}
-        {wantHeat && heat && <HeatLevels view={heat} price={price} clusters={prefs.layers.clusters} />}
+        {prefs.layers.zones && <ZoneList zones={shownZones} price={listPrice} />}
+        {wantHeat && heat && <HeatLevels view={heat} price={listPrice} clusters={prefs.layers.clusters} />}
         {wantHeat && !heat && !heatBusy && <p className={s.muted}>Bu pencerede heatmap snapshot&apos;ı yok.</p>}
-        {prefs.layers.prev && <PrevList prev={prev} price={price} />}
+        {prefs.layers.prev && <PrevList prev={prev} price={listPrice} />}
         <p className={s.note}>
           Grafik kütüphanesi{' '}
           <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">

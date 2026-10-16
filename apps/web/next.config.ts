@@ -1,9 +1,10 @@
 import type { NextConfig } from 'next'
 
-// @pt/db TypeScript kaynağı olarak paylaşılıyor (derlenmiş paket yok); pg sunucuda paketlenmeden kullanılır.
+// @pt/db TypeScript kaynağı olarak paylaşılıyor (derlenmiş paket yok); pg ve MetaApi SDK'sı sunucuda paketlenmeden
+// kullanılır (SDK'nin paket kökündeki "import" koşulu tarayıcı derlemesine gidiyor).
 const nextConfig: NextConfig = {
   transpilePackages: ['@pt/db'],
-  serverExternalPackages: ['pg'],
+  serverExternalPackages: ['pg', 'metaapi.cloud-sdk'],
   poweredByHeader: false,
   async headers() {
     return [

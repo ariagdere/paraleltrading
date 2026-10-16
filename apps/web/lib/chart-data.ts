@@ -1,4 +1,4 @@
-import { MAX_CANDLES, type CandleRow, type ChartTf, type ChartTokens, type PrevLevels, type Zones } from './chart-shared'
+import { MAX_CANDLES, TF_MS, type CandleRow, type ChartTf, type ChartTokens, type PrevLevels, type Zones } from './chart-shared'
 import { db } from './db'
 import { SYMBOL } from './market-data'
 
@@ -29,6 +29,28 @@ export async function loadCandles(tf: ChartTf, opt: { before?: number; after?: n
   const { rows } = await db().query<{ t: string; o: number; h: number; l: number; c: number }>(q.sql, q.args)
   const out = rows.map((r): CandleRow => [Number(r.t), r.o, r.h, r.l, r.c])
   return q.reverse ? out.reverse() : out
+}
+
+// Dilimin oluşan mumları: kayıtlı son mumdan sonraki aralıklar, kapanmış 1m mumlarından (en çok önceki ve şimdiki
+// aralık; collector bir dilimin mumunu kapanıştan birkaç saniye sonra yazar). Axi 4h ve 1d mumları İstanbul'a hizalı:
+// aralık başı floor((t + 3 sa) / dilim) · dilim − 3 sa (5m–1h'te UTC ile aynı). Canlı quote'lar tarayıcıda bunun
+// üstüne işlenir.
+export async function loadForming(tf: ChartTf): Promise<CandleRow[]> {
+  const { rows } = await db().query<{ t: string; o: number; h: number; l: number; c: number }>(
+    `WITH b AS (
+       SELECT greatest(
+         coalesce((SELECT max(open_time) FROM axi_candles WHERE symbol = $1 AND timeframe = $2) + make_interval(secs => $3), '-infinity'),
+         to_timestamp(floor((extract(epoch FROM now()) + 10800) / $3) * $3 - 10800 - $3)
+       ) AS start
+     )
+     SELECT ((floor((extract(epoch FROM open_time) + 10800) / $3) * $3 - 10800) * 1000)::bigint::text AS t,
+            (array_agg(open ORDER BY open_time))[1] AS o, max(high) AS h, min(low) AS l, (array_agg(close ORDER BY open_time DESC))[1] AS c
+     FROM axi_candles, b
+     WHERE symbol = $1 AND timeframe = '1m' AND open_time >= b.start
+     GROUP BY 1 ORDER BY 1`,
+    [SYMBOL, tf, TF_MS[tf] / 1000],
+  )
+  return rows.map((r): CandleRow => [Number(r.t), r.o, r.h, r.l, r.c])
 }
 
 // Son sürümün geçerli bölgeleri (on beş kadar), hangilerinin gösterileceğiyle. Tablo ya da sütun yoksa (core yeni
