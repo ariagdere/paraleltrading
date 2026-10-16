@@ -1,4 +1,4 @@
-import { MAX_CANDLES, type CandleRow, type ChartTf, type ChartTokens, type ChartZone, type PrevLevels, type Zones } from './chart-shared'
+import { MAX_CANDLES, type CandleRow, type ChartTf, type ChartTokens, type PrevLevels, type Zones } from './chart-shared'
 import { db } from './db'
 import { SYMBOL } from './market-data'
 
@@ -31,49 +31,40 @@ export async function loadCandles(tf: ChartTf, opt: { before?: number; after?: n
   return q.reverse ? out.reverse() : out
 }
 
-// Son sürümün bütün bölgeleri ve olayları (yüz kadar bölge, bin kadar olay). Tablolar yoksa (core henüz bu
-// sürümde değil) boş döner.
+// Son sürümün geçerli bölgeleri (on beş kadar), hangilerinin gösterileceğiyle. Tablo ya da sütun yoksa (core yeni
+// sürümü henüz kurmadıysa) boş döner.
 export async function loadZones(): Promise<Zones> {
   const pool = db()
   try {
     const { rows: vr } = await pool.query<{ version: string }>(`SELECT version FROM sr_versions ORDER BY created_at DESC LIMIT 1`)
     const version = vr[0]?.version ?? null
     if (!version) return { version: null, computedAt: null, zones: [] }
-    const [zs, es] = await Promise.all([
-      pool.query<{
-        zone_id: number
-        created_at: Date
-        ended_at: Date | null
-        end_reason: string | null
-        lo: number
-        hi: number
-        score: number
-        score_4h: number
-        score_1d: number
-        score_1w: number
-        touches: number
-        holds: number
-        breaks: number
-        computed_at: Date
-      }>(
-        `SELECT zone_id, created_at, ended_at, end_reason, lo, hi, score, score_4h, score_1d, score_1w, touches, holds, breaks, computed_at
-         FROM sr_zones WHERE symbol = $1 AND version = $2 ORDER BY zone_id`,
-        [SYMBOL, version],
-      ),
-      pool.query<{ zone_id: number; at: Date; kind: string; price: number; lo: number; hi: number }>(
-        `SELECT zone_id, at, kind, price, lo, hi FROM sr_zone_events WHERE symbol = $1 AND version = $2 ORDER BY zone_id, seq`,
-        [SYMBOL, version],
-      ),
-    ])
-    const byZone = new Map<number, ChartZone>()
-    let computedAt: Date | null = null
-    for (const r of zs.rows) {
-      if (!computedAt || r.computed_at > computedAt) computedAt = r.computed_at
-      byZone.set(r.zone_id, {
+    const { rows } = await pool.query<{
+      zone_id: number
+      created_at: Date
+      lo: number
+      hi: number
+      score: number
+      score_4h: number
+      score_1d: number
+      score_1w: number
+      touches: number
+      holds: number
+      breaks: number
+      shown: boolean
+      computed_at: Date
+    }>(
+      `SELECT zone_id, created_at, lo, hi, score, score_4h, score_1d, score_1w, touches, holds, breaks, shown,
+              (SELECT max(computed_at) FROM sr_zones WHERE symbol = $1 AND version = $2) AS computed_at
+       FROM sr_zones WHERE symbol = $1 AND version = $2 AND ended_at IS NULL ORDER BY lo`,
+      [SYMBOL, version],
+    )
+    return {
+      version,
+      computedAt: rows[0]?.computed_at?.toISOString() ?? null,
+      zones: rows.map((r) => ({
         id: r.zone_id,
         createdAt: r.created_at.getTime(),
-        endedAt: r.ended_at ? r.ended_at.getTime() : null,
-        endReason: r.end_reason,
         lo: r.lo,
         hi: r.hi,
         score: r.score,
@@ -81,20 +72,12 @@ export async function loadZones(): Promise<Zones> {
         touches: r.touches,
         holds: r.holds,
         breaks: r.breaks,
-        bands: [],
-        marks: [],
-      })
+        shown: r.shown,
+      })),
     }
-    for (const e of es.rows) {
-      const z = byZone.get(e.zone_id)
-      if (!z) continue
-      const t = e.at.getTime()
-      if (e.kind === 'created' || e.kind === 'resized') z.bands.push([t, e.lo, e.hi])
-      else if (e.kind === 'touch' || e.kind === 'hold' || e.kind === 'break') z.marks.push([t, e.kind, e.price])
-    }
-    return { version, computedAt: computedAt?.toISOString() ?? null, zones: [...byZone.values()] }
   } catch (err) {
-    if ((err as { code?: string }).code === '42P01') return { version: null, computedAt: null, zones: [] } // tablo yok
+    const code = (err as { code?: string }).code
+    if (code === '42P01' || code === '42703') return { version: null, computedAt: null, zones: [] } // tablo ya da sütun yok
     throw err
   }
 }
@@ -131,10 +114,9 @@ export async function loadChartTokens(): Promise<ChartTokens> {
       [SYMBOL],
     ),
     pool
-      .query<{ at: Date | null }>(
-        `SELECT max(computed_at) AS at FROM sr_zones WHERE symbol = $1 AND version = (SELECT version FROM sr_versions ORDER BY created_at DESC LIMIT 1)`,
-        [SYMBOL],
-      )
+      .query<{
+        at: Date | null
+      }>(`SELECT max(computed_at) AS at FROM sr_zones WHERE symbol = $1 AND version = (SELECT version FROM sr_versions ORDER BY created_at DESC LIMIT 1)`, [SYMBOL])
       .catch((err) => {
         if ((err as { code?: string }).code === '42P01') return { rows: [{ at: null }] }
         throw err

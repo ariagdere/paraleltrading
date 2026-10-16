@@ -5,22 +5,20 @@ import s from './price-chart.module.css'
 
 // Grafiğin altındaki ayrıntılar: yalnız açık katmanlarınki.
 
-export function ZoneList({
-  zones,
-  price,
-  showEnded,
-  onShowEnded,
-}: {
-  zones: ChartZone[]
-  price: number | null
-  showEnded: boolean
-  onShowEnded: (v: boolean) => void
-}) {
-  const active = zones.filter((z) => z.endedAt === null)
+const SOURCE = ['4h', 'günlük', 'haftalık'] as const
+
+// Gücün çoğu hangi dilimin izlerinden: en büyük pay; ikincisi onun en az yarısıysa ikisi.
+function source(mix: [number, number, number]) {
+  const order = [0, 1, 2].sort((a, b) => mix[b]! - mix[a]!)
+  const [first, second] = order as [number, number]
+  return mix[second]! >= mix[first]! * 0.5 && mix[second]! > 0 ? `${SOURCE[first]} ve ${SOURCE[second]}` : SOURCE[first]
+}
+
+export function ZoneList({ zones, price }: { zones: ChartZone[]; price: number | null }) {
   const ref = price
-  const above = ref === null ? [] : active.filter((z) => z.lo > ref).sort((a, b) => a.lo - b.lo).slice(0, 3)
-  const inside = ref === null ? [] : active.filter((z) => z.lo <= ref && z.hi >= ref)
-  const below = ref === null ? [] : active.filter((z) => z.hi < ref).sort((a, b) => b.hi - a.hi).slice(0, 3)
+  const above = ref === null ? [] : zones.filter((z) => z.lo > ref).sort((a, b) => b.lo - a.lo)
+  const inside = ref === null ? [] : zones.filter((z) => z.lo <= ref && z.hi >= ref)
+  const below = ref === null ? [] : zones.filter((z) => z.hi < ref).sort((a, b) => b.hi - a.hi)
   const row = (z: ChartZone, dir: string) => (
     <tr key={z.id}>
       <th scope="row">
@@ -33,9 +31,7 @@ export function ZoneList({
       </th>
       <td className={`num ${s.muted}`}>{ref !== null ? pct(dir === '↑' ? z.lo : dir === '↓' ? z.hi : ref, ref) : ''}</td>
       <td className={`num ${s.rt}`}>{fmt1.format(z.score)}</td>
-      <td className={`num ${s.rt} ${s.muted}`}>{fmt1.format(z.mix[0])}</td>
-      <td className={`num ${s.rt} ${s.muted}`}>{fmt1.format(z.mix[1])}</td>
-      <td className={`num ${s.rt} ${s.muted}`}>{fmt1.format(z.mix[2])}</td>
+      <td className={s.muted}>{source(z.mix)}</td>
       <td className={`num ${s.rt}`}>{z.touches}</td>
       <td className={`num ${s.rt}`}>{z.holds}</td>
       <td className={`num ${s.rt}`}>{z.breaks}</td>
@@ -48,7 +44,7 @@ export function ZoneList({
         Destek/direnç
       </h3>
       {zones.length === 0 ? (
-        <p className={s.muted}>Henüz bölge yok; core bölgeleri her 4h kapanışında hesaplıyor.</p>
+        <p className={s.muted}>Gösterilecek bölge yok; core bölgeleri her 4h kapanışında seçiyor.</p>
       ) : (
         <>
           <div className={s.scroll}>
@@ -58,17 +54,9 @@ export function ZoneList({
                   <th scope="col">Bant</th>
                   <th scope="col">Uzaklık</th>
                   <th scope="col" className={s.rt}>
-                    Puan
+                    Güç
                   </th>
-                  <th scope="col" className={s.rt}>
-                    4h
-                  </th>
-                  <th scope="col" className={s.rt}>
-                    1d
-                  </th>
-                  <th scope="col" className={s.rt}>
-                    1w
-                  </th>
+                  <th scope="col">Kaynak</th>
                   <th scope="col" className={s.rt}>
                     Test
                   </th>
@@ -78,15 +66,15 @@ export function ZoneList({
                   <th scope="col" className={s.rt}>
                     Kırıldı
                   </th>
-                  <th scope="col">Oluştu</th>
+                  <th scope="col">Belirdi</th>
                 </tr>
               </thead>
               <tbody>
-                {[...above].reverse().map((z) => row(z, '↑'))}
+                {above.map((z) => row(z, '↑'))}
                 {inside.map((z) => row(z, '•'))}
                 {ref !== null && (
                   <tr className={s.priceRow}>
-                    <th scope="row" colSpan={10}>
+                    <th scope="row" colSpan={8}>
                       fiyat <span className="num">{fmtP.format(ref)}</span>
                       {inside.length > 0 ? ', bir bölgenin içinde' : ''}
                     </th>
@@ -96,13 +84,10 @@ export function ZoneList({
               </tbody>
             </table>
           </div>
-          <label className={s.check}>
-            <input type="checkbox" checked={showEnded} onChange={(e) => onShowEnded(e.target.checked)} /> Biten bölgeleri de çiz
-          </label>
           <p className={s.note}>
-            Fiyatın üstündeki ve altındaki en yakın üçer geçerli bölge. Puan bandındaki izlerin bugünkü ağırlığı; 4h, 1d ve 1w sütunları puanın
-            hangi dilimden geldiği. Bölge kırılınca bitmez, rolü döner (destek dirence); izleri zayıflayınca biter. Core her 4h kapanışında
-            günceller.
+            Fiyatın ±%5&apos;inde, üstte ve altta en güçlü üçer bölge; fiyat bir bölgenin içindeyse o da. Güç bandındaki dönüş, gün ve hafta izlerinin bugünkü
+            ağırlığı; kaynak gücün çoğunun geldiği dilim. Bant belirdiği andan beri sabit. Kırılınca bölge bitmez, rolü döner (destek dirence). Core seçimi her
+            4h kapanışında yeniler; gösterilen bir bölgenin yerine ancak iki kat güçlü bir bölge geçer.
           </p>
         </>
       )}
@@ -186,8 +171,8 @@ export function HeatLevels({ view, price, clusters }: { view: HeatView; price: n
         </div>
       </div>
       <p className={s.note}>
-        {note} Isı CoinGlass model1 likidasyon seviyeleri; koyuluk o fiyattaki likidasyon miktarı, sağ kenardaki çubuklar fiyat seviyesine göre
-        toplamı. {clusters ? "Çizgiler core'un cluster'ları: 1 en büyüğü (eski sistemin kullandığı), 2 ve 3 sonrakiler." : ''}
+        {note} Isı CoinGlass model1 likidasyon seviyeleri; koyuluk o fiyattaki likidasyon miktarı, sağ kenardaki çubuklar fiyat seviyesine göre toplamı.{' '}
+        {clusters ? "Çizgiler core'un cluster'ları: 1 en büyüğü (eski sistemin kullandığı), 2 ve 3 sonrakiler." : ''}
       </p>
     </section>
   )

@@ -349,14 +349,6 @@
   border-radius: 0 2px 2px 0;
 }
 
-.check {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--muted);
-  cursor: pointer;
-}
-
 .note {
   color: var(--muted);
   font-size: var(--fs-sm);

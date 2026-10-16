@@ -98,10 +98,10 @@ Sayfa dakikada bir kendini yeniler (sekme arka plandaysa yenilemez). Bütün saa
 - **Katman düğmeleri** (aynı zamanda lejant; seçimler, dilim ve heatmap penceresi tarayıcıda hatırlanır):
   - **Heatmap:** CoinGlass model1 likidasyon seviyeleri mumların arkasında; koyuluk o fiyattaki likidasyon miktarı, kesik dikey çizgi heatmap'in alındığı an. Sağ kenardaki gri çubuklar fiyat seviyesine göre toplam likidasyon (profil); heatmap'in kapsamadığı uzun aralıklarda da görünür. Heatmap ve cluster'lar baz kadar kaydırılır, yani Axi fiyatıyla çizilir; snapshot anına ait Axi mumu yoksa CoinGlass fiyatıyla çizilir ve altta yazar.
   - **Cluster'lar:** core'un `heatmap_levels` tablosundan, fiyatın üstünde ve altında en çok üçer çizgi. Numara core'daki sıra: 1 eski sistemin kullandığı en büyük cluster (düz çizgi), 2 ve 3 aynı kuralın kalan seviyelerde tekrarı (kesik). Grafiğin sağ ucu görünürken fiyat ekseni fiyatın %6'sından yakın en yakın cluster'ları da kapsar.
-  - **Destek/direnç:** core'un bölgeleri (`sr_zones`, `sr_zone_events`) mor bantlar halinde, oluştuğu andan itibaren ve boyut değişimleriyle. Fiyatın hemen üstündeki ve altındaki bölge belirgin, diğer geçerli bölgeler soluk. Biten bölgeler varsayılan olarak çizilmez; ayrıntıdaki kutuyla açılır.
+  - **Destek/direnç:** yalnız core'un gösterdiği bölgeler: fiyatın ±%5'inde, üstte ve altta en güçlü 3 ve fiyatın içinde olduğu bölge. Her biri belirdiği andan sağ kenara sabit bir mor bant; sağda gücü yazar (heatmap açıksa profilin solunda). Seçim her 4h kapanışında yenilenir; gösterilen bir bölgenin yerine ancak iki kat güçlü bir bölge geçer.
   - **Önceki gün/hafta:** dünün tepe ve dibi (pdh, pdl), geçen haftanın tepe, dip, açılış ve kapanışı (pwh, pwl, pwo, pwc); kesik çizgiler. Gün 00:00'da, hafta pazartesi 00:00'da (İstanbul) başlar.
 - **Heatmap penceresi** (heatmap ya da cluster katmanı açıkken): 12h, 24h, 48h (açılışta 24h). ‹ ve › bir önceki ve sonraki snapshot'a gider; "En yeni" yeniden en yeni snapshot'ı izler. En yeni izlenirken dakikalık yenileme o pencerenin yeni snapshot'ını getirir; eski bir snapshot açıkken grafik yerinde kalır.
-- **Grafiğin altında** yalnız açık katmanların ayrıntısı: en yakın üçer geçerli bölge (bant, uzaklık, puan ve dilimlere dağılımı, test, tuttu, kırıldı, oluşma günü); cluster'lar ve bant likiditesi (referansın %1, %2 ve %3 altı ve üstü); önceki gün ve hafta seviyeleri.
+- **Grafiğin altında** yalnız açık katmanların ayrıntısı: gösterilen bölgeler yukarıdan aşağı, aralarında fiyat (bant, uzaklık, güç, kaynak: gücün çoğunun geldiği dilim, test, tuttu, kırıldı, belirdiği gün); cluster'lar ve bant likiditesi (referansın %1, %2 ve %3 altı ve üstü); önceki gün ve hafta seviyeleri.
 - **Yan sütun:** ZLEMA, RSI ve ATR (15m, 1h, 4h ve 1d'nin kapanmış son mumu, `axi_indicators`); Long/Short (Binance global ve top trader oranı, 5m–4h açıları); günlük bias (son rapor: yön, güven, net yön, skor, sonuç metni).
 - Grafik kütüphanesi TradingView Lightweight Charts (Apache 2.0); lisans gereği grafiğin köşesinde TradingView logosu ve sayfada atıf var.
 
@@ -110,7 +110,7 @@ Grafik verisini API verir; uçlar giriş ister ve önbelleğe alınmaz:
 | Uç | Ne verir |
 |---|---|
 | `/api/piyasa/mumlar?tf=1h[&before=<ms>\|&after=<ms>][&n=600]` | Axi mumları, eskiden yeniye: en yeni n, ya da bir andan önceki n (geçmişe kaydırınca), ya da bir andan sonrakiler (yeni kapanışlar). n en çok 2000 |
-| `/api/piyasa/bolgeler` | core'un son sürümünün bütün bölgeleri: bant geçmişi, test, tuttu ve kırıldı olayları |
+| `/api/piyasa/bolgeler` | core'un son sürümünün geçerli bölgeleri ve hangilerinin gösterileceği |
 | `/api/piyasa/heatmap?span=24h[&id=<snapshot>]` | snapshot'ın ısı ızgarası, cluster'ları, bant likiditesi ve bazı; önceki ve sonraki snapshot |
 
 Sayfanın dakikalık yenilemesi büyük veriyi yeniden göndermez, yalnız "değişti mi" işaretlerini taşır: yeni 1m mumu gelince grafik seçili dilimin son mumlarını, core bölgeleri yeniden hesaplayınca bölgeleri, seçili pencerede yeni snapshot olunca heatmap'i okur.

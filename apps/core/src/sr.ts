@@ -74,6 +74,7 @@ export async function writeZones(pool: Pool, zones: Zone[]): Promise<{ zones: nu
     touches: z.touches,
     holds: z.holds,
     breaks: z.breaks,
+    shown: z.shown,
     score_at: z.scores.map(([t]) => iso(t)),
     score_value: z.scores.map(([, v]) => v),
   }))
@@ -101,20 +102,22 @@ export async function writeZones(pool: Pool, zones: Zone[]): Promise<{ zones: nu
 
     const z = await client.query(
       `INSERT INTO sr_zones (symbol, version, zone_id, created_at, ended_at, end_reason, lo, hi, score, score_4h, score_1d, score_1w,
-                             touches, holds, breaks, score_at, score_value)
+                             touches, holds, breaks, shown, score_at, score_value)
        SELECT $1, $2, u.zone_id, u.created_at, u.ended_at, u.end_reason, u.lo, u.hi, u.score, u.score_4h, u.score_1d, u.score_1w,
-              u.touches, u.holds, u.breaks, u.score_at, u.score_value
+              u.touches, u.holds, u.breaks, u.shown, u.score_at, u.score_value
        FROM jsonb_to_recordset($3::jsonb) AS u(zone_id int, created_at timestamptz, ended_at timestamptz, end_reason text, lo float8, hi float8,
-            score float8, score_4h float8, score_1d float8, score_1w float8, touches int, holds int, breaks int, score_at timestamptz[], score_value float8[])
+            score float8, score_4h float8, score_1d float8, score_1w float8, touches int, holds int, breaks int, shown boolean,
+            score_at timestamptz[], score_value float8[])
        ON CONFLICT (symbol, version, zone_id) DO UPDATE SET
          created_at = EXCLUDED.created_at, ended_at = EXCLUDED.ended_at, end_reason = EXCLUDED.end_reason, lo = EXCLUDED.lo, hi = EXCLUDED.hi,
          score = EXCLUDED.score, score_4h = EXCLUDED.score_4h, score_1d = EXCLUDED.score_1d, score_1w = EXCLUDED.score_1w,
-         touches = EXCLUDED.touches, holds = EXCLUDED.holds, breaks = EXCLUDED.breaks, score_at = EXCLUDED.score_at,
+         touches = EXCLUDED.touches, holds = EXCLUDED.holds, breaks = EXCLUDED.breaks, shown = EXCLUDED.shown, score_at = EXCLUDED.score_at,
          score_value = EXCLUDED.score_value, computed_at = now()
        WHERE (sr_zones.created_at, sr_zones.ended_at, sr_zones.end_reason, sr_zones.lo, sr_zones.hi, sr_zones.score, sr_zones.score_4h,
-              sr_zones.score_1d, sr_zones.score_1w, sr_zones.touches, sr_zones.holds, sr_zones.breaks, sr_zones.score_at, sr_zones.score_value)
+              sr_zones.score_1d, sr_zones.score_1w, sr_zones.touches, sr_zones.holds, sr_zones.breaks, sr_zones.shown, sr_zones.score_at,
+              sr_zones.score_value)
          IS DISTINCT FROM (EXCLUDED.created_at, EXCLUDED.ended_at, EXCLUDED.end_reason, EXCLUDED.lo, EXCLUDED.hi, EXCLUDED.score,
-              EXCLUDED.score_4h, EXCLUDED.score_1d, EXCLUDED.score_1w, EXCLUDED.touches, EXCLUDED.holds, EXCLUDED.breaks,
+              EXCLUDED.score_4h, EXCLUDED.score_1d, EXCLUDED.score_1w, EXCLUDED.touches, EXCLUDED.holds, EXCLUDED.breaks, EXCLUDED.shown,
               EXCLUDED.score_at, EXCLUDED.score_value)`,
       [SYMBOL, SR_VERSION, JSON.stringify(zoneRows)],
     )

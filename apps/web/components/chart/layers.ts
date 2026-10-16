@@ -65,6 +65,11 @@ abstract class Layer implements ISeriesPrimitive<Time> {
   constructor(protected axis: TimeAxis) {
     const renderer: IPrimitivePaneRenderer = { draw: (target) => this.p && this.on && this.draw(target) }
     this.views = [{ zOrder: (): PrimitivePaneViewZOrder => 'bottom', renderer: () => renderer }]
+    // yazılar mumların üstünde
+    if (this.drawTop) {
+      const top: IPrimitivePaneRenderer = { draw: (target) => this.p && this.on && this.drawTop!(target) }
+      this.views.push({ zOrder: (): PrimitivePaneViewZOrder => 'top', renderer: () => top })
+    }
   }
 
   attached(p: SeriesAttachedParameter<Time>) {
@@ -101,6 +106,7 @@ abstract class Layer implements ISeriesPrimitive<Time> {
   }
 
   protected abstract draw(target: Target): void
+  protected drawTop?(target: Target): void
 }
 
 const BUCKETS = 24
@@ -244,16 +250,17 @@ export class HeatLayer extends Layer {
   }
 }
 
-export type ZoneView = ChartZone & { emphasis: 'near' | 'active' | 'ended' }
-
-// Destek/direnç bantları: oluştuğu andan bittiği ana (sürüyorsa sağ kenara) kadar, boyut değişimleriyle. Fiyatın
-// hemen üstündeki ve altındaki bölge (o anki hedefler) belirgin, diğer geçerli bölgeler soluk, bitenler istenirse
-// çok soluk.
+// Destek/direnç: yalnız core'un gösterdiği bölgeler (fiyatın üstünde ve altında en güçlü 3, içinde olduğu), belirdiği
+// andan sağ kenara sabit bir bant. Sağda gücü yazar (heatmap profili açıksa profilin solunda).
 export class ZoneLayer extends Layer {
-  private zones: ZoneView[] = []
+  private zones: ChartZone[] = []
   color = '#9085e9'
+  text = '#e9edf5'
+  bg = '#1a2336'
+  font = 'sans-serif'
+  labelInset = 8 // px, sağ kenardan
 
-  setZones(zones: ZoneView[]) {
+  setZones(zones: ChartZone[]) {
     this.zones = zones
     this.update()
   }
@@ -263,44 +270,65 @@ export class ZoneLayer extends Layer {
       const W = bitmapSize.width
       const H = bitmapSize.height
       const X = this.xScale()
-      const order = { ended: 0, active: 1, near: 2 }
-      for (const z of [...this.zones].sort((a, b) => order[a.emphasis] - order[b.emphasis])) {
-        const [fill, edge] = z.emphasis === 'near' ? [0.26, 0.95] : z.emphasis === 'active' ? [0.09, 0.38] : [0.07, 0.32]
-        for (let k = 0; k < z.bands.length; k++) {
-          const [t0, lo, hi] = z.bands[k]!
-          const t1 = k + 1 < z.bands.length ? z.bands[k + 1]![0] : z.endedAt
-          const a = X(t0)
-          const b = t1 === null ? W / hr : X(t1)
-          if (a === null || b === null) continue
-          const x0 = Math.max(0, a * hr)
-          const x1 = Math.min(W, b * hr)
-          if (x1 <= 0 || x0 >= W || x1 <= x0) continue
-          const yt = this.y(hi)
-          const yb = this.y(lo)
-          if (yt === null || yb === null) continue
-          const y0 = yt * vr
-          const y1 = yb * vr
-          if (y1 < 0 || y0 > H) continue
-          ctx.fillStyle = rgba(this.color, fill)
-          ctx.fillRect(x0, y0, x1 - x0, Math.max(1, y1 - y0))
-          ctx.strokeStyle = rgba(this.color, edge)
-          ctx.lineWidth = Math.max(1, hr)
-          ctx.beginPath()
-          ctx.moveTo(x0, Math.round(y0) + 0.5)
-          ctx.lineTo(x1, Math.round(y0) + 0.5)
-          ctx.moveTo(x0, Math.round(y1) + 0.5)
-          ctx.lineTo(x1, Math.round(y1) + 0.5)
-          ctx.stroke()
+      for (const z of this.zones) {
+        const a = X(z.createdAt)
+        const yt = this.y(z.hi)
+        const yb = this.y(z.lo)
+        if (a === null || yt === null || yb === null) continue
+        const x0 = Math.max(0, a * hr)
+        if (x0 >= W) continue
+        const y0 = yt * vr
+        const y1 = yb * vr
+        if (y1 < 0 || y0 > H) continue
+        ctx.fillStyle = rgba(this.color, 0.2)
+        ctx.fillRect(x0, y0, W - x0, Math.max(1, y1 - y0))
+        ctx.strokeStyle = rgba(this.color, 0.85)
+        ctx.lineWidth = Math.max(1, hr)
+        ctx.beginPath()
+        ctx.moveTo(x0, Math.round(y0) + 0.5)
+        ctx.lineTo(W, Math.round(y0) + 0.5)
+        ctx.moveTo(x0, Math.round(y1) + 0.5)
+        ctx.lineTo(W, Math.round(y1) + 0.5)
+        if (x0 > 0) {
+          ctx.moveTo(Math.round(x0) + 0.5, y0)
+          ctx.lineTo(Math.round(x0) + 0.5, y1)
         }
+        ctx.stroke()
+      }
+    })
+  }
+
+  // gücü bandın sağında, zemin şeridiyle (mumların üstünde okunsun)
+  protected drawTop(target: Target) {
+    target.useBitmapCoordinateSpace(({ context: ctx, bitmapSize, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
+      const W = bitmapSize.width
+      const H = bitmapSize.height
+      const X = this.xScale()
+      ctx.font = `600 ${11 * vr}px ${this.font}`
+      ctx.textAlign = 'right'
+      ctx.textBaseline = 'middle'
+      for (const z of this.zones) {
+        const a = X(z.createdAt)
+        const yt = this.y(z.hi)
+        const yb = this.y(z.lo)
+        if (a === null || yt === null || yb === null) continue
+        const x0 = Math.max(0, a * hr)
+        const ym = ((yt + yb) / 2) * vr
+        if (ym < 0 || ym > H) continue
+        const label = `güç ${z.score.toLocaleString('tr-TR', { maximumFractionDigits: 1 })}`
+        const xl = W - this.labelInset * hr
+        const w = ctx.measureText(label).width
+        if (xl - w - 6 * hr < x0) continue
+        ctx.fillStyle = rgba(this.bg, 0.8)
+        ctx.fillRect(xl - w - 4 * hr, ym - 8 * vr, w + 8 * hr, 16 * vr)
+        ctx.fillStyle = rgba(this.text, 0.9)
+        ctx.fillText(label, xl, ym)
       }
     })
   }
 }
 
-// Bir andaki bant (o andan önceki son oluşma ya da boyut değişimi).
+// Bir andaki bant: bölge o anda varsa (bant sabit).
 export function bandAt(z: ChartZone, t: number): [number, number] | null {
-  if (t < z.createdAt || (z.endedAt !== null && t >= z.endedAt)) return null
-  let band: [number, number] | null = null
-  for (const [bt, lo, hi] of z.bands) if (bt <= t) band = [lo, hi]
-  return band
+  return t >= z.createdAt ? [z.lo, z.hi] : null
 }
