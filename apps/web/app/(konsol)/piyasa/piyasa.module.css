@@ -1,0 +1,182 @@
+/* Piyasa: üstte fiyat ve üç kısa bilgi; altta geniş grafik ve yanında göstergeler. */
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem 3rem;
+  margin-bottom: 1.5rem;
+}
+
+.quote {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.sym {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.price {
+  font-size: var(--fs-hero);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+
+.change {
+  color: var(--muted);
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 2.5rem;
+  margin: 0;
+}
+
+.facts div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.facts dt {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.facts dd {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+}
+
+/* ızgara öğeleri içeriklerinden dar olabilsin; geniş tablolar kendi içinde kayar */
+.grid > *,
+.side > *,
+.panel > * {
+  min-width: 0;
+}
+
+@container (min-width: 1100px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr) 27rem;
+  }
+}
+
+.side {
+  display: grid;
+  gap: 1.75rem;
+  min-width: 0;
+}
+
+.panel {
+  display: grid;
+  gap: 0.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.h2 {
+  font-size: var(--fs-md);
+}
+
+.scroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: 0.35rem 0.6rem 0.35rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  white-space: nowrap;
+}
+
+.table thead th {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  text-align: left;
+}
+
+.table tbody th {
+  text-align: left;
+  font-weight: 600;
+}
+
+.r {
+  text-align: right !important;
+}
+
+.zone {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  padding: 0.05rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.long {
+  border-color: var(--up);
+  background: color-mix(in srgb, var(--up) 16%, transparent);
+}
+
+.short {
+  border-color: #d95926;
+  background: color-mix(in srgb, #d95926 16%, transparent);
+}
+
+.flat {
+  color: var(--muted);
+}
+
+.flag {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.dir {
+  color: var(--muted);
+  margin-right: 0.2rem;
+}
+
+.note {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.biasLine {
+  font-size: var(--fs-md);
+}
+
+.conclusion {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  max-width: 60ch;
+}
+
+.errorTitle {
+  font-size: var(--fs-xl);
+  margin-bottom: 0.75rem;
+}

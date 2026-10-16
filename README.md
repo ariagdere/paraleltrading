@@ -10,7 +10,7 @@ Plan: proje dokümanı "Hakari 2 — Sürekli Veri Akışı Planı".
 | `packages/db` | Postgres bağlantısı, migration çalıştırıcı, şema (`migrations/`); servislerin ortak sağlık kaydı ve zamanlayıcısı |
 | `apps/collector` | Binance L/S (5 dk), heatmap (saatlik; başarısız olursa aynı saatte yeniden), Axi mumları 1m–1d (dakikada bir; 30 dakikada bir boşluk denetimi), sembol bilgisi ve günlük bias raporları toplayıcı; isteğe bağlı eski DB kopyası; açılışta migration'ları uygular |
 | `apps/core` | Axi göstergeleri: ZLEMA bölgesi, RSI 14, ATR 14 (15m, 1h, 4h, 1d); heatmap seviyeleri: cluster'lar, bant likiditesi, baz; L/S açıları (global ve TT; 5m, 15m, 1h, 4h); dakikada bir |
-| `apps/web` | Tarayıcıdan açılan konsol (Next.js): giriş ve Sağlık sayfası (her kaynağın son verisi, gecikmeler, hatalar); veritabanını yalnız okur |
+| `apps/web` | Tarayıcıdan açılan konsol (Next.js): giriş; Piyasa sayfası (fiyat, mumlarla birlikte likidasyon heatmap'i ve cluster'lar, göstergeler, L/S, bias); Sağlık sayfası (her kaynağın son verisi, gecikmeler, hatalar); veritabanını yalnız okur |
 
 ## Kurallar
 

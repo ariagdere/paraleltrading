@@ -1,0 +1,245 @@
+.card {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+}
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.seg button {
+  padding: 0.35rem 0.9rem;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.seg button + button {
+  border-left: 1px solid var(--line-2);
+}
+
+.seg button[aria-checked='true'] {
+  background: var(--ink-3);
+  color: var(--text);
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.step,
+.latest {
+  height: 2rem;
+  padding: 0 0.6rem;
+  background: var(--ink-2);
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.step {
+  width: 2rem;
+  padding: 0;
+}
+
+.step:disabled,
+.latest:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.when {
+  min-width: 8.6em;
+  text-align: center;
+  font-weight: 700;
+}
+
+.scale {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  margin-left: auto;
+}
+
+.scale i {
+  display: block;
+  width: 8rem;
+  height: 0.55rem;
+  border-radius: 3px;
+  background: linear-gradient(to right, color-mix(in srgb, var(--heat) 6%, transparent), var(--heat));
+}
+
+.error {
+  padding: 0.6rem 0.9rem;
+  border-left: 4px solid var(--fail);
+  background: color-mix(in srgb, var(--fail) 10%, var(--ink));
+}
+
+.wrap {
+  position: relative;
+  height: clamp(420px, 62vh, 720px);
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.wrap canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.over {
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+
+.busy {
+  opacity: 0.6;
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.tip {
+  position: absolute;
+  z-index: 2;
+  min-width: 11rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--ink-3);
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+
+.tipHead {
+  font-weight: 700;
+  margin-bottom: 0.2rem;
+}
+
+.tipRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.tipRow span:first-child {
+  color: var(--muted);
+}
+
+.levels {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.clusters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 1rem 2rem;
+}
+
+.h3 {
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+}
+
+.scroll {
+  overflow-x: auto;
+}
+
+.bandBlock {
+  grid-column: 1 / -1;
+  max-width: 44rem;
+}
+
+.table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.table th {
+  text-align: left;
+  font-weight: 600;
+  padding: 0.25rem 0.8rem 0.25rem 0;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 0.25rem 0.8rem 0.25rem 0;
+  white-space: nowrap;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.rt {
+  text-align: right;
+}
+
+/* iki yana açılan çubuk: sol yarı aşağıdaki, sağ yarı yukarıdaki likidite */
+.divCell {
+  width: 45%;
+  min-width: 7rem;
+}
+
+.div {
+  display: flex;
+  gap: 2px;
+}
+
+.half {
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
+  height: 0.55rem;
+  background: var(--ink-3);
+  border-radius: 2px 0 0 2px;
+  overflow: hidden;
+}
+
+.half i {
+  display: block;
+  height: 100%;
+  background: var(--heat);
+  opacity: 0.85;
+}
+
+.right {
+  justify-content: flex-start;
+  border-radius: 0 2px 2px 0;
+}
+
+.note {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  max-width: 80ch;
+}
