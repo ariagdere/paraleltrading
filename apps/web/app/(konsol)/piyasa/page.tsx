@@ -1,20 +1,9 @@
 import type { Metadata } from 'next'
 import { connection } from 'next/server'
 import { AutoRefresh } from '@/components/AutoRefresh'
-import { MarketChart } from '@/components/MarketChart'
-import {
-  isSpan,
-  loadHeatView,
-  loadMarket,
-  type AngleRow,
-  type BiasRow,
-  type HeatView,
-  type IndicatorRow,
-  type Market,
-  type RatioRow,
-  type Span,
-  type Zone,
-} from '@/lib/market-data'
+import { PriceChart } from '@/components/chart/PriceChart'
+import { loadChartTokens, loadPrevLevels, type ChartTokens, type PrevLevels } from '@/lib/chart-data'
+import { loadMarket, type AngleRow, type BiasRow, type IndicatorRow, type Market, type RatioRow, type Zone } from '@/lib/market-data'
 import { clock } from '@/lib/time'
 import s from './piyasa.module.css'
 
@@ -33,15 +22,14 @@ const ZONE: Record<Zone, { text: string; glyph: string; cls: string }> = {
 const BIAS: Record<BiasRow['bias'], string> = { LONG: 'Long', NEUTRAL: 'Nötr', SHORT: 'Short' }
 const CONF: Record<BiasRow['confidence'], string> = { LOW: 'düşük güven', MEDIUM: 'orta güven', HIGH: 'yüksek güven' }
 
-export default async function PiyasaPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+export default async function PiyasaPage() {
   await connection() // her istekte veritabanından
-  const q = (await searchParams).span
-  const span: Span = isSpan(q) ? q : '24h' // heatmap penceresi; grafikte seçilir
 
   let market: Market
-  let heat: HeatView | null
+  let tokens: ChartTokens
+  let prev: PrevLevels
   try {
-    ;[market, heat] = await Promise.all([loadMarket(), loadHeatView(span, null)])
+    ;[market, tokens, prev] = await Promise.all([loadMarket(), loadChartTokens(), loadPrevLevels(new Date())])
   } catch (err) {
     console.error(`[web] piyasa okunamadı: ${(err as Error).message}`)
     return (
@@ -87,7 +75,7 @@ export default async function PiyasaPage({ searchParams }: { searchParams: Promi
         <dl className={s.facts}>
           <div>
             <dt>Baz</dt>
-            <dd className="num">{heat?.basis != null ? `${signed(heat.basis, fmtP)} $` : '—'}</dd>
+            <dd className="num">{market.basis !== null ? `${signed(market.basis, fmtP)} $` : '—'}</dd>
           </div>
           <div>
             <dt>ATR 4h</dt>
@@ -101,7 +89,7 @@ export default async function PiyasaPage({ searchParams }: { searchParams: Promi
       </header>
 
       <div className={s.grid}>
-        <MarketChart span={span} initial={heat} price={quote?.price ?? null} />
+        <PriceChart tokens={tokens} price={quote?.price ?? null} prev={prev} />
         <aside className={s.side} aria-label="Göstergeler">
           <Indicators rows={market.indicators} now={now} />
           <LongShort angles={market.angles} ratios={market.ratios} now={now} />

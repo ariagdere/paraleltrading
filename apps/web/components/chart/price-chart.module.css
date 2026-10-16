@@ -1,3 +1,6 @@
+/* Temel fiyat grafiği: üstte dilim ve katman düğmeleri, heatmap açıkken snapshot seçimi; altta açık katmanların
+   ayrıntısı. Katman düğmeleri aynı zamanda lejant: her birinin işareti grafikteki çizimiyle aynı. */
+
 .card {
   display: grid;
   gap: 0.75rem;
@@ -19,7 +22,7 @@
 }
 
 .seg button {
-  padding: 0.35rem 0.9rem;
+  padding: 0.35rem 0.85rem;
   background: transparent;
   border: 0;
   color: var(--muted);
@@ -34,6 +37,77 @@
 .seg button[aria-checked='true'] {
   background: var(--ink-3);
   color: var(--text);
+}
+
+.layers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.75rem 0.3rem 0.6rem;
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chip[aria-pressed='true'] {
+  background: var(--ink-3);
+  border-color: color-mix(in srgb, var(--text) 35%, var(--line-2));
+  color: var(--text);
+}
+
+.chip[aria-pressed='false'] .mark {
+  opacity: 0.35;
+}
+
+/* düğmelerdeki işaretler: grafikteki çizimin küçüğü */
+.mark {
+  display: inline-block;
+  width: 1.1rem;
+  height: 0.7rem;
+  flex: none;
+}
+
+.markHeat {
+  border-radius: 2px;
+  background: linear-gradient(to right, color-mix(in srgb, var(--heat) 15%, transparent), var(--heat));
+}
+
+.markCluster {
+  height: 0;
+  border-top: 2px solid var(--text);
+}
+
+.markZone {
+  border-top: 1.5px solid var(--zone);
+  border-bottom: 1.5px solid var(--zone);
+  background: color-mix(in srgb, var(--zone) 30%, transparent);
+}
+
+.markPrev {
+  height: 0;
+  border-top: 2px dashed var(--muted);
+}
+
+.heatbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1.25rem;
+}
+
+.heatLabel {
+  color: var(--muted);
+  font-weight: 600;
 }
 
 .nav {
@@ -80,7 +154,7 @@
 
 .scale i {
   display: block;
-  width: 8rem;
+  width: 7rem;
   height: 0.55rem;
   border-radius: 3px;
   background: linear-gradient(to right, color-mix(in srgb, var(--heat) 6%, transparent), var(--heat));
@@ -94,26 +168,19 @@
 
 .wrap {
   position: relative;
-  height: clamp(420px, 62vh, 720px);
+  height: clamp(420px, 64vh, 760px);
   background: var(--ink-2);
   border: 1px solid var(--line);
   border-radius: 8px;
+  overflow: hidden;
 }
 
-.wrap canvas {
+.chart {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
 }
 
-.over {
-  cursor: crosshair;
-  touch-action: pan-y;
-}
-
-.busy {
+.busy .chart {
   opacity: 0.6;
 }
 
@@ -123,12 +190,14 @@
   display: grid;
   place-items: center;
   color: var(--muted);
+  pointer-events: none;
 }
 
 .tip {
   position: absolute;
-  z-index: 2;
-  min-width: 11rem;
+  z-index: 3;
+  min-width: 12rem;
+  max-width: 20rem;
   padding: 0.5rem 0.7rem;
   background: var(--ink-3);
   border: 1px solid var(--line-2);
@@ -153,9 +222,36 @@
   color: var(--muted);
 }
 
-.levels {
+.tipZone {
+  margin-top: 0.3rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid var(--line-2);
+}
+
+.details {
   display: grid;
-  gap: 0.6rem;
+  gap: 1.5rem;
+}
+
+.detail {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.detail > * {
+  min-width: 0;
+}
+
+.h3 {
+  font-size: var(--fs-md);
+}
+
+.h4 {
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
 }
 
 .clusters {
@@ -164,15 +260,8 @@
   gap: 1rem 2rem;
 }
 
-.h3 {
-  font-size: var(--fs-base);
-  font-weight: 600;
-  color: var(--muted);
-  margin-bottom: 0.3rem;
-}
-
-.scroll {
-  overflow-x: auto;
+.clusters > * {
+  min-width: 0;
 }
 
 .bandBlock {
@@ -180,21 +269,43 @@
   max-width: 44rem;
 }
 
+.scroll {
+  overflow-x: auto;
+}
+
 .table {
   border-collapse: collapse;
   width: 100%;
 }
 
-.table th {
-  text-align: left;
-  font-weight: 600;
+.table th,
+.table td {
   padding: 0.25rem 0.8rem 0.25rem 0;
+  text-align: left;
   white-space: nowrap;
 }
 
-.table td {
-  padding: 0.25rem 0.8rem 0.25rem 0;
-  white-space: nowrap;
+.table thead th {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.table tbody th {
+  font-weight: 600;
+}
+
+.priceRow th {
+  padding: 0.35rem 0;
+  color: var(--text);
+  font-weight: 700;
+  border-top: 1px dashed var(--line-2);
+  border-bottom: 1px dashed var(--line-2);
+}
+
+.dir {
+  color: var(--muted);
+  margin-right: 0.35rem;
 }
 
 .muted {
@@ -202,7 +313,7 @@
 }
 
 .rt {
-  text-align: right;
+  text-align: right !important;
 }
 
 /* iki yana açılan çubuk: sol yarı aşağıdaki, sağ yarı yukarıdaki likidite */
@@ -238,8 +349,20 @@
   border-radius: 0 2px 2px 0;
 }
 
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
 .note {
   color: var(--muted);
   font-size: var(--fs-sm);
   max-width: 80ch;
+}
+
+.note a {
+  color: inherit;
 }
