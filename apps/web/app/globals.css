@@ -18,6 +18,7 @@
   --up: #199e70;
   --down: #8a93a8;
   --zone: #9085e9; /* destek/direnç bantları (ısı sarı olduğu için mor) */
+  --short: #d95926; /* short rozeti ve L/S'te düşen eğim */
 
   --font: 'Atkinson Hyperlegible Next Variable', 'Atkinson Hyperlegible Next', system-ui, sans-serif;
 

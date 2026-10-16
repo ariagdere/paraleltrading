@@ -90,6 +90,84 @@
   font-size: var(--fs-md);
 }
 
+.h3 {
+  font-size: var(--fs-base);
+  font-weight: 600;
+}
+
+.panelHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+/* dilim seçimi (fiyat grafiğinin dilim düğmeleriyle aynı biçim) */
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.seg button {
+  padding: 0.2rem 0.7rem;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.seg button + button {
+  border-left: 1px solid var(--line-2);
+}
+
+.seg button[aria-checked='true'] {
+  background: var(--ink-3);
+  color: var(--text);
+}
+
+/* tabloda grafikleri gösterilen dilimin sütunu */
+.table .sel {
+  background: color-mix(in srgb, var(--ink-3) 80%, transparent);
+}
+
+.lsBlock {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.lsHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.lsChart {
+  height: 9rem;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* L/S açısının yönü: ok ve renk (yükselen yeşil, düşen turuncu, ±5° içi nötr) */
+.up {
+  color: var(--up);
+}
+
+.down {
+  color: color-mix(in srgb, var(--short) 80%, white);
+}
+
+.arrow {
+  margin-right: 0.2rem;
+}
+
 .scroll {
   overflow-x: auto;
 }
@@ -139,8 +217,8 @@
 }
 
 .short {
-  border-color: #d95926;
-  background: color-mix(in srgb, #d95926 16%, transparent);
+  border-color: var(--short);
+  background: color-mix(in srgb, var(--short) 16%, transparent);
 }
 
 .flat {
@@ -150,11 +228,6 @@
 .flag {
   color: var(--muted);
   font-size: 0.8rem;
-}
-
-.dir {
-  color: var(--muted);
-  margin-right: 0.2rem;
 }
 
 .note {

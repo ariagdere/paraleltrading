@@ -1,17 +1,18 @@
 import type { Metadata } from 'next'
 import { connection } from 'next/server'
 import { AutoRefresh } from '@/components/AutoRefresh'
+import { LivePrice } from '@/components/LivePrice'
 import { PriceChart } from '@/components/chart/PriceChart'
 import { loadChartTokens, loadPrevLevels, type ChartTokens, type PrevLevels } from '@/lib/chart-data'
-import { loadMarket, type AngleRow, type BiasRow, type IndicatorRow, type Market, type RatioRow, type Zone } from '@/lib/market-data'
+import { loadMarket, type BiasRow, type IndicatorRow, type Market, type Zone } from '@/lib/market-data'
 import { clock } from '@/lib/time'
+import { LongShort } from './LongShort'
 import s from './piyasa.module.css'
 
 export const metadata: Metadata = { title: 'Piyasa' }
 
 const fmtP = new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 0 })
 const fmt1 = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
-const fmt2 = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const signed = (v: number, f: Intl.NumberFormat) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${f.format(Math.abs(v))}`
 const TF_MS: Record<string, number> = { '15m': 15 * 60_000, '1h': 3_600_000, '4h': 4 * 3_600_000, '1d': 86_400_000 }
 const ZONE: Record<Zone, { text: string; glyph: string; cls: string }> = {
@@ -53,24 +54,13 @@ export default async function PiyasaPage() {
       <header className={s.head}>
         <div className={s.quote}>
           <p className={s.sym}>Axi BTCUSD</p>
-          <h1 className={`${s.price}`}>
-            <span className="visually-hidden">Axi BTCUSD </span>
-            {quote ? fmtP.format(quote.price) : '—'}
-          </h1>
-          {quote && (
-            <p className={s.change}>
-              {quote.prevClose !== null && (
-                <>
-                  <span className="num">
-                    {signed(quote.price - quote.prevClose, fmtP)} (%{fmt2.format(Math.abs(((quote.price - quote.prevClose) / quote.prevClose) * 100))}
-                    {quote.price >= quote.prevClose ? ' yukarı' : ' aşağı'})
-                  </span>{' '}
-                  dünkü kapanıştan,{' '}
-                </>
-              )}
-              son 1m mumu <time className="num">{clock(quote.at, now)}</time>
-            </p>
-          )}
+          <LivePrice
+            price={quote?.price ?? null}
+            at={quote?.at.toISOString() ?? null}
+            prevClose={quote?.prevClose ?? null}
+            priceClass={s.price!}
+            changeClass={s.change!}
+          />
         </div>
         <dl className={s.facts}>
           <div>
@@ -92,7 +82,7 @@ export default async function PiyasaPage() {
         <PriceChart tokens={tokens} price={quote?.price ?? null} prev={prev} />
         <aside className={s.side} aria-label="Göstergeler">
           <Indicators rows={market.indicators} now={now} />
-          <LongShort angles={market.angles} ratios={market.ratios} now={now} />
+          <LongShort angles={market.angles} ratios={market.ratios} series={market.lsSeries} now={now} />
           <Bias bias={market.bias} now={now} />
         </aside>
       </div>
@@ -157,75 +147,6 @@ function Indicators({ rows, now }: { rows: IndicatorRow[]; now: Date }) {
         </div>
       )}
       <p className={s.note}>Kapanmış son mumun değerleri. Mum sütunu o mumun kapandığı an.</p>
-    </section>
-  )
-}
-
-function LongShort({ angles, ratios, now }: { angles: AngleRow[]; ratios: RatioRow[]; now: Date }) {
-  const periods = ['5m', '15m', '1h', '4h']
-  const metrics = [
-    ['global', 'Global'],
-    ['top_position', 'Top trader'],
-  ] as const
-  const last = ratios.reduce<Date | null>((m, r) => (!m || r.ts > m ? r.ts : m), null)
-  return (
-    <section className={s.panel} aria-labelledby="ls-title">
-      <h2 id="ls-title" className={s.h2}>
-        Long/Short
-      </h2>
-      <div className={s.scroll}>
-        <table className={s.table}>
-          <thead>
-            <tr>
-              <th scope="col" />
-              <th scope="col" className={s.r}>
-                Oran
-              </th>
-              {periods.map((p) => (
-                <th key={p} scope="col" className={s.r}>
-                  {p}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {metrics.map(([m, label]) => {
-              const ratio = ratios.find((r) => r.metric === m)
-              return (
-                <tr key={m}>
-                  <th scope="row">{label}</th>
-                  <td className={`${s.r} num`}>{ratio ? fmt2.format(ratio.ratio) : '—'}</td>
-                  {periods.map((p) => {
-                    const a = angles.find((x) => x.metric === m && x.period === p)
-                    return (
-                      <td key={p} className={`${s.r} num`} title={a ? `${p} açısı, ${clock(a.ts, now)} noktası` : undefined}>
-                        {a?.angle != null ? (
-                          <>
-                            <span aria-hidden="true" className={s.dir}>
-                              {a.angle > 0 ? '↗' : a.angle < 0 ? '↘' : '→'}
-                            </span>
-                            {signed(a.angle, new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 0 }))}°
-                          </>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                    )
-                  })}
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-      <p className={s.note}>
-        Açı, oranın son 30 noktadaki eğimi; o ana kadarki eğimlerin %90&apos;lık değerine göre ölçekli (±90°).{' '}
-        {last && (
-          <>
-            Son nokta <time className="num">{clock(last, now)}</time>.
-          </>
-        )}
-      </p>
     </section>
   )
 }
