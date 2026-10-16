@@ -1,0 +1,121 @@
+/* Hakari 2 konsolu: koyu mürekkep zemin, tek yazı ailesi (Atkinson Hyperlegible Next; rakamları ve harfleri
+   karışmayacak biçimde çizilmiş), masaüstünde geniş yerleşim. Durum renkleri yalnız durum için kullanılır. */
+
+:root {
+  --ink: #131a2a;
+  --ink-2: #1a2336;
+  --ink-3: #212c43;
+  --line: #2b3650;
+  --line-2: #3a4766;
+  --text: #e9edf5;
+  --muted: #9aa6be;
+  --ok: #3cc6a8;
+  --late: #f2a541;
+  --fail: #f06a60;
+  --idle: #6f7a94;
+  --heat: #f5c84c; /* heatmap ve "şimdi" işareti için ayrıldı */
+
+  --font: 'Atkinson Hyperlegible Next Variable', 'Atkinson Hyperlegible Next', system-ui, sans-serif;
+
+  /* Ölçek ≈ 1,25; gövde 18 px */
+  --fs-sm: 0.9rem; /* 16,2 px: yalnız ikincil bilgi */
+  --fs-base: 1rem;
+  --fs-md: 1.25rem;
+  --fs-lg: 1.56rem;
+  --fs-xl: 1.95rem;
+  --fs-hero: 2.45rem;
+
+  --nav-w: 15rem;
+  --gutter: clamp(1rem, 3vw, 3.5rem);
+  --content-max: 100rem; /* 1800 px */
+
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 18px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Saat, süre ve sayı içeren her şey sabit genişlikte rakamla: alt alta satırlar hizalı kalır. */
+.num,
+time {
+  font-variant-numeric: tabular-nums;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--text);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+p {
+  margin: 0;
+}
+
+/* Durum rengi: data-level taşıyan her öğede --level (ok, late, down, idle). */
+[data-level='ok'] {
+  --level: var(--ok);
+}
+[data-level='late'] {
+  --level: var(--late);
+}
+[data-level='down'] {
+  --level: var(--fail);
+}
+[data-level='idle'] {
+  --level: var(--idle);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
