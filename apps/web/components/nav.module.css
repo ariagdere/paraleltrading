@@ -77,6 +77,22 @@
   container-type: inline-size;
 }
 
+/* telefonda menü tek satıra sığsın */
+@media (max-width: 480px) {
+  .nav {
+    gap: 0.6rem;
+  }
+
+  .mark {
+    font-size: var(--fs-base);
+  }
+
+  .link,
+  .logoutButton {
+    padding: 0.35rem 0.5rem;
+  }
+}
+
 @media (min-width: 1600px) {
   .shell {
     display: grid;

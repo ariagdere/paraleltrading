@@ -8,7 +8,7 @@ export default function KonsolLayout({ children }: { children: ReactNode }) {
   return (
     <div className={s.shell}>
       <nav className={s.nav} aria-label="Ana menü">
-        <Link className={s.mark} href="/saglik">
+        <Link className={s.mark} href="/piyasa">
           Hakari 2
         </Link>
         <NavLinks />

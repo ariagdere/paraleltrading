@@ -14,6 +14,9 @@
   --fail: #f06a60;
   --idle: #6f7a94;
   --heat: #f5c84c; /* heatmap ve "şimdi" işareti için ayrıldı */
+  /* Grafik: yükselen mum, düşen mum (renk körlüğünde de ayrışsın diye biri nötr) */
+  --up: #199e70;
+  --down: #8a93a8;
 
   --font: 'Atkinson Hyperlegible Next Variable', 'Atkinson Hyperlegible Next', system-ui, sans-serif;
 

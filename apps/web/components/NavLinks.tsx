@@ -4,8 +4,11 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import s from './nav.module.css'
 
-// Menü bağlantıları; bulunulan sayfa işaretli. Yeni sayfalar (heatmap, piyasa) buraya eklenecek.
-const LINKS = [{ href: '/saglik', label: 'Sağlık' }]
+// Menü bağlantıları; bulunulan sayfa işaretli.
+const LINKS = [
+  { href: '/piyasa', label: 'Piyasa' },
+  { href: '/saglik', label: 'Sağlık' },
+]
 
 export function NavLinks() {
   const path = usePathname()

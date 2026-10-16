@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 
-// Şimdilik tek sayfa var.
+// Ana sayfa piyasa.
 export default function Home() {
-  redirect('/saglik')
+  redirect('/piyasa')
 }

@@ -1,6 +1,9 @@
 # web servisi (Railway)
 
-web, Hakari 2'nin tarayıcıdan açılan yüzü. Şimdilik tek sayfa var: **Sağlık**. Her veri kaynağının son verisinin ne zaman geldiğini, sıradakinin ne zaman beklendiğini, gecikenleri ve hataları gösterir. Sonraki sayfalar (heatmap grafiği, piyasa değerleri) aynı servise eklenecek.
+web, Hakari 2'nin tarayıcıdan açılan yüzü. İki sayfa var:
+
+- **Piyasa** (girişten sonra açılan sayfa): Axi BTCUSD fiyatı, mumlarla aynı grafikte likidasyon heatmap'i ve cluster'lar, ZLEMA/RSI/ATR, Long/Short oranı ve açıları, günlük bias.
+- **Sağlık**: her veri kaynağının son verisinin ne zaman geldiği, sıradakinin ne zaman beklendiği, gecikenler ve hatalar.
 
 collector ve core'la aynı repodan üçüncü bir servis. Veritabanına yalnız okumak için bağlanır: oturumlar salt okunur açılır (`default_transaction_read_only`), web hiçbir tabloya yazamaz. Kullanıcı adı ve şifre Railway değişkenlerinde; giriş yapılmadan hiçbir sayfa ve veri açılmaz.
 
@@ -55,7 +58,9 @@ Build loglarında:
 ✓ Compiled successfully
   Finished TypeScript ...
 Route (app)
+├ ƒ /api/piyasa/heatmap
 ├ ƒ /login
+├ ƒ /piyasa
 └ ƒ /saglik
 ƒ Proxy (Middleware)
 ```
@@ -67,9 +72,10 @@ Deploy loglarında:
 ✓ Ready in ...
 ```
 
-Adresi açınca giriş sayfası gelir. Girişten sonra Sağlık sayfası açılır; loglara `[web] giriş yapıldı (IP)` düşer. Hatalı denemeler `[web] giriş: hatalı (IP, 3/10)` olarak görünür.
+Adresi açınca giriş sayfası gelir. Girişten sonra Piyasa sayfası açılır; loglara `[web] giriş yapıldı (IP)` düşer. Hatalı denemeler `[web] giriş: hatalı (IP, 3/10)` olarak görünür.
 
-- Bu PR `package-lock.json`'u ve `packages/db/package.json`'u değiştirdiği için merge edilince collector ve core da yeniden başlar. Heatmap turuna denk gelmesin diye merge'ü xx:00–xx:06 dışında yap.
+- Yalnız `apps/web`'i değiştiren bir merge yalnız web'i yeniden deploy eder; collector ve core çalışmaya devam eder.
+- `packages/db`'yi ya da `package-lock.json`'u değiştiren bir merge collector ve core'u da yeniden başlatır. Heatmap turuna denk gelmesin diye böyle merge'leri xx:00–xx:06 dışında yap.
 
 ## 6. Giriş ve oturum
 
@@ -78,7 +84,26 @@ Adresi açınca giriş sayfası gelir. Girişten sonra Sağlık sayfası açıl�
 - Başka bir siteden gönderilen form ve yazan istekler reddedilir.
 - Menüdeki "Çıkış yap" çerezi siler.
 
-## 7. Sağlık sayfası nasıl karar veriyor
+## 7. Piyasa sayfası
+
+Sayfa dakikada bir kendini yeniler (sekme arka plandaysa yenilemez). Bütün saatler İstanbul saati; fiyatlar Axi BTCUSD.
+
+- **Üst satır:** son 1m mumunun kapanışı, dünkü günlük kapanıştan değişim; baz (CoinGlass ile Axi fiyat farkı), ATR 4h, günlük bias.
+- **Grafik:** seçilen heatmap penceresinin (12h, 24h, 48h; açılışta 24h) snapshot'ı ve aynı aralığın Axi mumları (12h'de 5m, 24h ve 48h'de 15m). Mumlar snapshot'tan sonra pencerenin dörtte biri kadar daha (en çok şimdiye kadar) devam eder; dikey çizgi heatmap'in alındığı an.
+  - Isı CoinGlass model1 likidasyon seviyeleri; koyuluk o fiyattaki likidasyon miktarı. Sağ üstteki ölçek o snapshot'taki en büyük hücre.
+  - Heatmap ve cluster'lar baz kadar kaydırılır, yani Axi fiyatıyla çizilir. Snapshot anına ait Axi mumu yoksa baz hesaplanamaz; o zaman CoinGlass fiyatıyla çizilir ve altta yazar.
+  - Seçilen pencere adreste durur (`/piyasa?span=12h`); sayfa yenilenince ya da yeniden açılınca aynı pencere gelir.
+  - ‹ ve › bir önceki ve sonraki snapshot'a gider; "En yeni" yeniden en yeni snapshot'ı izler. En yeni izlenirken dakikalık yenileme o pencerenin yeni snapshot'ını getirir; eski bir snapshot açıkken grafik yerinde kalır.
+  - İmleç mumun açılış, tepe, dip ve kapanışını, imlecin fiyatını ve altındaki hücrenin likidasyonunu gösterir.
+- **Cluster'lar:** core'un `heatmap_levels` tablosundan, fiyatın üstünde ve altında en çok üçer tane, fiyata yakından uzağa. Numara core'daki sıra: 1 eski sistemin kullandığı en büyük cluster, 2 ve 3 aynı kuralın kalan seviyelerde tekrarı. Fiyatın %6'sından yakın olan en yakın cluster'lar grafiğin içine alınır; dışında kalanların etiketi grafiğin kenarında "(grafiğin dışında)" diye yazar.
+- **Bant likiditesi:** CoinGlass referans fiyatının %1, %2 ve %3 altına ve üstüne kadar toplam likidasyon; solda fiyatın altı, sağda üstü.
+- **ZLEMA, RSI ve ATR:** 15m, 1h, 4h ve 1d'nin kapanmış son mumu (`axi_indicators`). Mum sütunu o mumun kapandığı an.
+- **Long/Short:** Binance global ve top trader oranının son noktası ve 5m, 15m, 1h, 4h açıları (`lsr_series`, `lsr_angles`).
+- **Günlük bias:** son rapor (`daily_bias`): yön, güven, net yön, skor ve sonuç metni.
+
+Grafik verisini `/api/piyasa/heatmap?span=24h[&id=<snapshot>]` verir; bu uç da giriş ister ve önbelleğe alınmaz.
+
+## 8. Sağlık sayfası nasıl karar veriyor
 
 Sayfa `collector_status` ve `collector_runs` tablolarını okur, 30 saniyede bir kendini yeniler (sekme arka plandaysa yenilemez). Bütün saatler İstanbul saati.
 
@@ -99,7 +124,7 @@ Her kaynak için "sıradaki veri ne zaman gelmeliydi" hesaplanır. Beklenen anda
 - "Son hatalar" tablosu son 7 günün en yeni 12 hatası (`collector_runs`'taki başarısız kayıtlar). Heatmap'te her başarısız deneme ayrı satırdır.
 - Çubuk son veriden bu yana geçen süreyi gösterir: çentikte sıradaki veri beklenir, sarı bölgeye geçerse gecikmeli, sona dayanırsa durdu.
 
-## 8. Yerelde çalıştırma
+## 9. Yerelde çalıştırma
 
 ```
 DATABASE_URL="<Postgres'in DATABASE_PUBLIC_URL'i>" PGSSL=true WEB_USER=ari WEB_PASSWORD=deneme \
