@@ -1,0 +1,21 @@
+{
+  "run_id": 1,
+  "generated_at": "2026-10-27T19:10:00Z",
+  "ozet": "İlk koşuda (21 Eylül–27 Ekim, yaklaşık 36 gün) iki yönde de şanstan ayrışan bir kombinasyon yok. Long'un en iyisi +4,88 R ile şans testinin %95'lik değeri olan +9,38 R'nin, short'un en iyisi +10,82 R ile +14,99 R'nin altında kaldı. Bu dönemde kurallardan çok yön belirleyici: filtresiz short artıda, filtresiz long ekside.",
+  "gecerlilik": "",
+  "bulgular": [
+    "Filtresiz short 85 işlemde +6,72 R (işlem başı +0,08 R, %79 kazanma, max DD 4,07 R), filtresiz long 77 işlemde −7,79 R (işlem başı −0,10 R, max DD 13,66 R) verdi.",
+    "Short #1 (ZLEMA 1h nötr · Yakın/uzak oranı 0,4–0,7) 32 işlemde +10,82 R ve 1,88 R max DD ile güçlü görünse de şans tekrarlarının ortancası +10,50 R olduğundan bu sonuç olağan; tekrarların %53,5'inden iyi.",
+    "Long #1 (L/S global 1h aynı 0–15°) 40 işlemde +4,88 R ile şans ortancası +6,29 R'nin bile altında; tekrarların yalnız %24'ünden iyi.",
+    "En iyi long ve short birlikte 72 işlemde +15,70 R verdi; bu, aynı testin şans ortancası +16,81 R'nin altında.",
+    "Short'un en iyi 10 kuralından 4'ünde Yakın/uzak oranı koşulu var; bu koşul gelecek koşularda tekrar ederse istikrarın ilk işareti olur."
+  ],
+  "oneriler": [
+    "Kesin karar için en az bir aylık koşu daha bekle; şu an veri yalnız 36 gün ve en iyi kurallar 30 işlem eşiğine yakın (30–50 işlem).",
+    "Sonraki koşunun denetiminde short #1 ile Yakın/uzak oranı 0,4–0,7 ve 0,7–1 kurallarının filtresiz short tabanını geçip geçmediğine özellikle bak.",
+    "Long tarafında dönem genelinde filtresiz taban ekside olduğundan long kurallarını yönün değiştiği bir dönemde ayrıca değerlendir."
+  ],
+  "guven": "Düşük",
+  "model": "claude-opus-5-5",
+  "prompt_version": "v1"
+}
