@@ -31,9 +31,13 @@ Dosyanın alanları:
 - `results.combined`: en iyi long ve en iyi short ayrı yuvalarda (`n`, `sumR`, `maxDD`, `overlapHours` iki yönün
   birlikte açık kaldığı saat, `nullSumP50`, `nullSumP95`). `results.base2`: filtresiz, iki yön ayrı yuvalarda.
 - `results.validation` (önceki koşu varsa): `previousRunId`, `from`–`to` aralığı (önceki koşunun verisinin bittiği andan
-  bu koşunun sonuna), `rules` (önceki koşunun en iyi 10 long ve 10 short kuralı: `side`, `rank`, `label`, `previous` o koşudaki
-  sonucu, `forward` bu aralıktaki sonucu, `baseForward` aynı aralığın filtresiz tabanı, `verdict`: tutuyor, tutmuyor,
-  veri_az ya da gecersiz) ve `combined` (önceki long #1 ve short #1 birlikte).
+  bu koşunun sonuna), `rules` (önceki koşunun her yöndeki en iyi 10 kombinasyonundan toplam R'si artıda olanlar: `side`,
+  `rank`, `label`, `previous` o koşudaki sonucu, `forward` bu aralıktaki sonucu, `baseForward` aynı aralığın filtresiz
+  tabanı, `verdict`) ve `combined` (önceki long #1 ve short #1 birlikte; ikisi de artıdaysa).
+- `verdict`: `tutuyor` = aralıkta en az 10 işlem, toplam R artıda ve işlem başına R aynı aralığın filtresiz tabanından
+  aşağı değil; `tutmuyor` = bunlardan biri sağlanmadı (kural kazandırmış olsa bile filtresiz tabandan kötüyse filtre
+  değer katmamıştır); `veri_az` = 10'dan az işlem; `gecersiz` = kuralın bir koşulu bu koşuda yok.
+- `results.rules`: bu koşunun bir sonraki koşuda denetlenecek kuralları (aynı seçim).
 - R: işlem başına risk birimi (SL mesafesi 1 R). Zamanlar ms ya da ISO (UTC); yazarken İstanbul saatiyle tarih kullan.
   Ondalıklar dosyada 4 haneye yuvarlıdır; `curve` alanları ([kapanış anı, birikimli R] çiftleri) ve `null.values`
   (200 şans tekrarının en iyileri) uzun listelerdir, özet alanlar yeterliyse onları tek tek incelemen gerekmez.
@@ -47,9 +51,13 @@ Yalnız bu dosyalardaki sayılarla konuş; sayı uydurma, fiyat teknik analizi y
   (`top[0].sumR`) şans testinin %95'lik değerinin (`null.p95`) üstündeyse "şanstan ayrışıyor", değilse "şansla
   açıklanabilir". 30 işlem eşiğine yakın sonuçlara ve max DD'ye dikkat et.
 - Önceki bulgu (validation varsa): hangi kurallar tuttu, hangileri tutmadı, hangilerinde veri az; birleşik kural.
-  Önceki koşunun en iyi kuralı bu koşunun en iyileri arasında yine var mı (`label` karşılaştır)? Tutanların sayısı
-  şansla beklenenden fazla mı (yaklaşık yarısının tesadüfen tutması olağan)?
-- Yön: filtresiz long ve short arasındaki fark; ay ay dağılımdan dönemin hangi yöne uygun olduğu (kesin konuşma).
+  Tutmayan ama artıda kalan kuralları ayrıca söyle (kazandırdı ama filtresiz tabanı geçemedi). Önceki koşunun en iyi
+  kuralı bu koşunun en iyileri arasında yine var mı (`label` karşılaştır)? Tutanların sayısı şansla beklenenden fazla
+  mı (yaklaşık yarısının tesadüfen tutması olağan)? Önceki koşunun şans testi sonucu (onun `sides.*.null.p95`'i) neydi:
+  şansla açıklanabilir bir bulgunun tutmaması beklenen sonuçtur.
+- Yön: filtresiz long ve short arasındaki fark (`sides.*.base`, aralık için `validation.rules[].baseForward`); ay ay
+  dağılımdan dönemin hangi yöne uygun olduğu (kesin konuşma). Kurallardan çok yönün belirleyici olduğu durumu açıkça
+  söyle.
 - İstikrar: önceki koşuyla karşılaştırınca tekrar eden koşullar (ör. yakın/uzak oranı, belirli bir ZLEMA durumu).
 - Veri yeterliliği: işlem sayıları ve ay ay kapsam; karar için ne kadar veri gerektiği.
 - Öneri: yalnız veri destekliyorsa ve somutsa (ör. "short #1 kuralını bir ay daha izle", "şu koşulu ayrı test et");
