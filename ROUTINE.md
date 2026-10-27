@@ -83,7 +83,7 @@ Yalnız bu dosyalardaki sayılarla konuş; sayı uydurma, fiyat teknik analizi y
 }
 ```
 
-`run_id` dosya adındaki numarayla aynı sayı. Türkçe, kısa cümleler; sayılar Türkçe biçimde (+4,5 R, %83, 21 Eylül).
+`run_id` dosya adındaki numarayla aynı sayı. `generated_at` dosyayı yazdığın an: tahmin etme, `date -u +%Y-%m-%dT%H:%M:%SZ` çıktısını kullan (sayfada "Claude, <saat>" olarak görünür). Türkçe, kısa cümleler; sayılar Türkçe biçimde (+4,5 R, %83, 21 Eylül).
 
 Doğrula: `node tools/yorum-dogrula.mjs yorum/<id>.json`. Hata verirse düzelt ve tekrar doğrula; geçmeden commit'leme.
 
