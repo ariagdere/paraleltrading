@@ -38,7 +38,11 @@ export const GROUPS: Array<{ key: GroupKey; title: string; about: string }> = [
   { key: 'heatmap', title: "Likidasyon heatmap'i", about: "CoinGlass model1, Apify ile saatte bir; seviyeleri core hesaplar." },
   { key: 'lsr', title: 'Long/Short oranı', about: "Binance futures, 5 dakikada bir; açıları core hesaplar." },
   { key: 'bias', title: 'Günlük bias', about: 'Claude rutini, hafta içi her gün 09:07; GitHub bias-data dalından.' },
-  { key: 'strategy', title: 'Strateji', about: "Naif kuralın kararları ve benzetilen işlemleri (doğrulama); core her 12h snapshot'ında hesaplar." },
+  {
+    key: 'strategy',
+    title: 'Strateji',
+    about: "Naif kuralın kararları (doğrulama; core her 12h snapshot'ında) ve kombinasyon simülasyonu (her ayın 1'i; sonuç ve Claude yorumu sim-data dalında).",
+  },
   { key: 'legacy', title: 'Eski sistem', about: "Eski DB'den işlemler ve olaylar, saatte bir (salt okunur)." },
   { key: 'other', title: 'Diğer', about: 'Bu sayfanın tanımadığı kaynaklar.' },
 ]
@@ -103,6 +107,8 @@ export const CATALOG: Def[] = [
     source: 'core:naif', group: 'strategy', label: 'Naif kural', name: 'Naif kural kararları', kind: 'snapshot', critical: false,
     dataWord: 'son döngü', upstream: ['core:heatmap'],
   },
+  { source: 'core:sim', group: 'strategy', label: 'Simülasyon', name: 'Kombinasyon simülasyonu', kind: 'job', critical: false },
+  { source: 'core:sim-yorum', group: 'strategy', label: 'Simülasyon dalı', name: 'Simülasyon sonuç ve yorum eşitlemesi', kind: 'job', critical: false },
   { source: 'legacy', group: 'legacy', label: 'İşlem kopyası', name: 'Eski sistem kopyası', kind: 'job', critical: false },
 ]
 

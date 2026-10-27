@@ -3,10 +3,13 @@
 // likiditesi, baz), L/S açıları (global ve TT; 5m, 15m, 1h, 4h) ve naif kuralın kararları ile benzetilen işlemleri
 // (doğrulama). Açılışta migration'ları uygular ve eksikleri hesaplar; sonra dakikada bir (saniye 20, collector'ın mum
 // turundan sonra) yeni ya da düzeltilmiş mumları, yeni heatmap snapshot'larını ve L/S noktalarını işler.
+// Ayrı bir iş (dakikada bir, saniye 40) kombinasyon simülasyonunu yürütür: aylık koşu ve web'den istenen koşular,
+// sonuçların ve Claude yorumlarının sim-data dalıyla eşitlenmesi (sim/job.ts).
 import { createPool, every, migrate, type Job, type Pool } from '@pt/db'
 import { syncHeatmapLevels } from './heatmap.js'
 import { syncLsrAngles } from './lsr.js'
 import { syncNaive } from './naif.js'
+import { simTick } from './sim/job.js'
 import { syncZones } from './sr.js'
 import { syncIndicators } from './sync.js'
 
@@ -63,3 +66,4 @@ process.once('SIGINT', () => void stop('SIGINT'))
 
 await first
 jobs.push(every('core', MINUTE, 20_000, turn))
+jobs.push(every('sim', MINUTE, 40_000, () => simTick(pool)))

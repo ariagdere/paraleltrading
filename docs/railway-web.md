@@ -1,12 +1,13 @@
 # web servisi (Railway)
 
-web, Hakari 2'nin tarayıcıdan açılan yüzü. Üç sayfa var:
+web, Hakari 2'nin tarayıcıdan açılan yüzü. Dört sayfa var:
 
 - **Piyasa** (girişten sonra açılan sayfa): canlı Axi BTCUSD fiyatı; tek temel grafik (oluşan mum canlı) ve düğmeyle açılıp kapanan katmanlar (likidasyon heatmap'i, cluster'lar, destek/direnç bölgeleri, önceki gün/hafta seviyeleri); ZLEMA/RSI/ATR, Long/Short oranı, açıları ve son 30 noktanın grafikleri, günlük bias.
 - **Doğrulama**: eski sistemin naif kuralının yeni sistemin verisiyle yeniden oynatılması ve ileri izlemesi; gerçek naif işlemlerle karşılaştırma.
+- **Simülasyon**: naif setup'ın kombinasyon taraması (core, ayda bir ve istenince), şans testi, önceki bulgunun denetimi ve Claude'un yorumu; "Şimdi çalıştır" düğmesi.
 - **Sağlık**: her veri kaynağının son verisinin ne zaman geldiği, sıradakinin ne zaman beklendiği, gecikenler ve hatalar.
 
-collector ve core'la aynı repodan üçüncü bir servis. Veritabanına yalnız okumak için bağlanır: oturumlar salt okunur açılır (`default_transaction_read_only`), web hiçbir tabloya yazamaz. Kullanıcı adı ve şifre Railway değişkenlerinde; giriş yapılmadan hiçbir sayfa ve veri açılmaz. Canlı fiyat için MetaApi'ye tek bir streaming bağlantısı açar (yalnız BTCUSD quote'ları; işlem yapmaz, hesabı deploy etmez).
+collector ve core'la aynı repodan üçüncü bir servis. Veritabanını okur: oturumlar salt okunur açılır (`default_transaction_read_only`). Tek yazma yolu Simülasyon sayfasının "Şimdi çalıştır" düğmesi: ayrı, tek bağlantılık bir havuzla `sim_runs`'a istek satırı ekler (sırada ya da çalışan koşu varsa eklemez); koşuyu core yapar. Kullanıcı adı ve şifre Railway değişkenlerinde; giriş yapılmadan hiçbir sayfa ve veri açılmaz. Canlı fiyat için MetaApi'ye tek bir streaming bağlantısı açar (yalnız BTCUSD quote'ları; işlem yapmaz, hesabı deploy etmez).
 
 ## 1. Servisi aç
 
@@ -147,7 +148,17 @@ Eşleşme: gerçek emir önce aynı Apify çalıştırmasının kararıyla eşle
 
 Core kararları henüz yazmadıysa sayfa "Henüz karar yok" der.
 
-## 9. Sağlık sayfası nasıl karar veriyor
+## 9. Simülasyon sayfası
+
+Naif setup'ın kombinasyon taraması: core her ayın 1'inde 04:00'te (İstanbul) ve bu sayfadaki **Şimdi çalıştır**la çalıştırır (hesap core dokümanının 5. bölümünde, "Kombinasyon simülasyonu"). Sayfa son biten koşuyu gösterir; aşağıdaki listeden eski bir koşu seçilebilir (`?kosu=<numara>`). Koşu sıradayken ya da çalışırken düğme kilitlidir ve sayfa 15 saniyede bir yenilenir; başka zaman 5 dakikada bir.
+
+- **Başlık:** her yön için tek cümle: en iyi kombinasyon şans testinden ayrışıyor mu.
+- **Claude'un yorumu:** özet, önceki bulgu hakkında değerlendirme, bulgular, öneriler ve güven. Yorum Claude'un "Hakari Simülasyon Yorumu" zamanlanmış görevinden gelir (her gün 09:37, yorumsuz koşu varsa); gelene kadar "Bekleniyor" yazar. Hemen istenirse Claude uygulamasında görev elle çalıştırılabilir.
+- **Önceki bulgunun denetimi:** bir önceki aylık koşunun (yoksa bir önceki koşunun) toplam R'si artıda kuralları arada geçen dönemde: işlem, toplam R, işlem başına R, max DD, aynı dönemin filtresiz tabanı ve durum (tutuyor, tutmuyor, veri az). İlk üç sıra ve birleşik görünür, kalanı açılır listede.
+- **Sonuç, eğri, en iyi 10'lar, aylar:** birleşik (her yönün en iyisi ayrı yuvalarda), en iyi long ve short, filtresiz taban; toplam R eğrisi; her yönün en iyi 10 kombinasyonu ve şans testi; ay ay veri kapsamı; geçmiş koşular.
+- Sonuç `sim-data` dalına yazılamadıysa (`SIM_GITHUB_TOKEN` yok ya da geçersiz) koşu satırında nedeni yazar; Claude o koşuyu yorumlayamaz.
+
+## 10. Sağlık sayfası nasıl karar veriyor
 
 Sayfa `collector_status` ve `collector_runs` tablolarını okur, 30 saniyede bir kendini yeniler (sekme arka plandaysa yenilemez). Bütün saatler İstanbul saati.
 
@@ -161,6 +172,7 @@ Her kaynak için "sıradaki veri ne zaman gelmeliydi" hesaplanır. Beklenen anda
 | Bakım işleri: boşluk denetimi, sembol bilgisi, Apify bütçesi, eski sistem kopyası | son başarılı çalışmadan işin aralığı kadar sonra | aralığın %10'u, en az 2 dk; en çok sarı |
 | Geçmiş doldurma | izlenmez, yalnız hata | en çok sarı |
 | Naif kural kararları | son döngüden 1 saat sonra; kaynağı heatmap seviyeleri | 15 dk |
+| Kombinasyon simülasyonu, simülasyon dalı eşitlemesi | son başarılı koşudan 32 gün sonra; eşitleme 5 dk | bakım işleri gibi; en çok sarı |
 | Günlük bias | hafta içi 09:07 | hafta içi 12:00'ye kadar bugünkü rapor yoksa kırmızı; öncesinde "bekleniyor", hafta sonu rapor beklenmez; okuma hatası rapor gecikmedikçe sarı |
 
 - Kaynak hata veriyorsa (`consecutive_failures > 0`) satırda son hata ve kaç kez üst üste olduğu yazar. Veri hâlâ zamanındaysa ve hata 3 kez üst üste değilse sarı (geçici: zaman aşımı, tekrar deneniyor), değilse kırmızı.
@@ -169,7 +181,7 @@ Her kaynak için "sıradaki veri ne zaman gelmeliydi" hesaplanır. Beklenen anda
 - "Son hatalar" tablosu son 7 günün en yeni 12 hatası (`collector_runs`'taki başarısız kayıtlar). Heatmap'te her başarısız deneme ayrı satırdır.
 - Çubuk son veriden bu yana geçen süreyi gösterir: çentikte sıradaki veri beklenir, sarı bölgeye geçerse gecikmeli, sona dayanırsa durdu.
 
-## 10. Yerelde çalıştırma
+## 11. Yerelde çalıştırma
 
 ```
 DATABASE_URL="<Postgres'in DATABASE_PUBLIC_URL'i>" PGSSL=true WEB_USER=ari WEB_PASSWORD=deneme \
