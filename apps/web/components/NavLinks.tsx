@@ -8,6 +8,7 @@ import s from './nav.module.css'
 const LINKS = [
   { href: '/piyasa', label: 'Piyasa' },
   { href: '/dogrulama', label: 'Doğrulama' },
+  { href: '/simulasyon', label: 'Simülasyon' },
   { href: '/saglik', label: 'Sağlık' },
 ]
 

@@ -1,12 +1,13 @@
 # core servisi (Railway)
 
-core, collector'ın yazdığı ham verilerden hesaplanan değerleri üretip aynı Postgres'e yazan ikinci süreç. Beş hesap yapıyor:
+core, collector'ın yazdığı ham verilerden hesaplanan değerleri üretip aynı Postgres'e yazan ikinci süreç. Altı hesap yapıyor:
 
 - **Axi göstergeleri** (`axi_indicators`): ZLEMA bölgesi, RSI 14 ve ATR 14; 15m, 1h, 4h ve 1d dilimlerinde her kapanmış mum için.
 - **Destek/direnç bölgeleri** (`sr_zones`, `sr_zone_events`): Axi 4h ve 1d mumlarından; her bölgenin belirdiği ve bittiği an, sabit bandı, gücü, hangi dilimlerden geldiği, olayları (test, tuttu, kırıldı) ve ekranda gösterilip gösterilmediği. Her 4h kapanışında.
 - **Heatmap seviyeleri** (`heatmap_levels`): her heatmap snapshot'ı (12h, 24h, 48h) için her yönde en çok 3 cluster, %1/2/3 bant likiditesi ve heatmap fiyatı ile Axi fiyatı arasındaki baz.
 - **L/S açıları** (`lsr_angles`): global ve TT pozisyon oranı için 5m, 15m, 1h ve 4h dilimlerinde serinin her noktasında açı.
 - **Naif kural kararları** (`naive_decisions`): eski sistemin naif kuralının yeni sistemin verisiyle yeniden oynatılması ve ileri izlemesi (doğrulama). 18 Eylül'den bu yana her 12h snapshot'ında karar ve sinyalse Axi 1m mumlarıyla benzetilen işlem.
+- **Kombinasyon simülasyonu** (`sim_runs`): naif setup'ın long ve short için ZLEMA, L/S açısı ve yakın/uzak cluster oranı kombinasyonlarıyla taranması, şans testi ve bir önceki koşunun bulgularının arada geçen dönemde denetimi. Her ayın 1'inde 04:00'te (İstanbul) ve web'in Simülasyon sayfasındaki "Şimdi çalıştır"la. Sonuç GitHub'daki `sim-data` dalına da yazılır; Claude'un zamanlanmış görevi oradan okuyup yorumunu aynı dala koyar, core yorumu alıp sayfaya taşır.
 
 collector'la aynı repodan ikinci bir servis: kod aynı, başlatma komutu ve izlenen yollar farklı. Böylece core'a gelen bir değişiklik collector'ı yeniden başlatmaz, core'daki bir hata da veri toplamayı durdurmaz. İkisi aynı Postgres'i kullanır.
 
@@ -40,8 +41,22 @@ Start Command'in npm üzerinden değil doğrudan node ile olması collector'daki
 |---|---|
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
 | `NAIVE_FROM` | İsteğe bağlı: naif kararların başladığı an; varsayılan `2026-09-18T00:00:00Z` |
+| `SIM_GITHUB_TOKEN` | Simülasyon sonucunu `sim-data` dalına yazmak için GitHub token'ı (aşağıda). Yoksa simülasyon yine çalışır ve sayfada görünür, ama dala yazılamaz ve Claude yorumlayamaz |
+| `SIM_FROM` | İsteğe bağlı: simülasyon verisinin en erken anı; varsayılan `2026-09-17T00:00:00Z`. Bütün değişkenlerin dolu olduğu saatler ayrıca seçilir (şu an 21 Eylül 15:00'ten itibaren) |
+| `SIM_REPO`, `SIM_BRANCH` | İsteğe bağlı: varsayılan `ariagdere/paraleltrading` ve `sim-data` |
 
-Başka değişken gerekmiyor; core dış servislere bağlanmıyor. `Postgres` yerine kanvastaki Postgres servisinin adı yazılır (`${{` yazınca açılan listeden seçmek en güvenlisi).
+Başka değişken gerekmiyor; core yalnız simülasyon için GitHub'a bağlanır. `Postgres` yerine kanvastaki Postgres servisinin adı yazılır (`${{` yazınca açılan listeden seçmek en güvenlisi).
+
+### `SIM_GITHUB_TOKEN` nasıl alınır
+
+1. GitHub → sağ üstte profil resmi → Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token.
+2. Token name: `paraleltrading core sim-data`; Expiration: en uzun seçenek; Resource owner: `ariagdere`.
+3. Repository access: Only select repositories → `paraleltrading`.
+4. Permissions → Repository permissions → Contents: **Read and write** (Metadata: Read-only kendiliğinden eklenir). Başka izin gerekmiyor.
+5. Generate token → değeri kopyala (bir kez gösterilir) → Railway'de core servisinin Variables'ına `SIM_GITHUB_TOKEN` olarak ekle. Servis yeniden başlar.
+
+- GitHub token'ı dal bazında kısıtlamıyor (repoya yazabilir); core yalnız `sim-data` dalının `runs/` klasörüne yazar.
+- Süresi dolunca Sağlık sayfasında "Simülasyon sonuç ve yorum eşitlemesi" satırı 401 hatası gösterir; yenisini aynı değişkene gir.
 
 ## 4. İlk açılışta beklenenler
 
@@ -68,6 +83,17 @@ Başka değişken gerekmiyor; core dış servislere bağlanmıyor. `Postgres` ye
 - Naif kararlar ilk açılışta 18 Eylül'den bu yana bütün 12h snapshot'ları için hesaplanır (eski sistemden kopyalananlar ve collector'ın saatlik 12h'leri; birkaç saniye). Sonra her turda girdilerden biri değişince (yeni 1m mumu, yeni snapshot ya da seviye) baştan hesaplanır, yalnız değişen satırlar yazılır: yeni snapshot gelince ya da açık bir işlem kapanınca log satırı düşer.
 - Beklenmeyen biçimde bir snapshot olursa `[core] heatmap 123 (12h): seviye çıkmadı` yazar; o snapshot boş satırla işaretlenir, yeniden denenmez.
 - Deploy sırasında eski süreç kapanana kadar yenisi `başka bir core çalışıyor; kilit bekleniyor` yazar.
+- Simülasyon açılışta bir şey yapmaz; bir koşu istenince (ayın 1'i 04:00 ya da "Şimdi çalıştır") en geç bir dakika içinde başlar:
+
+  ```
+  [core] simülasyon: aylık koşu sıraya kondu
+  [core] simülasyon #1 başladı
+  [core] simülasyon #1 bitti (12 sn): 2482 long, 2849 short aday
+  [core] simülasyon #1 sim-data dalına yazıldı (a1b2c3d)
+  [core] simülasyon #1 yorumu alındı
+  ```
+
+  Koşu birkaç saniyeden bir dakikaya kadar sürer (veri büyüdükçe uzar); arada core'un diğer işleri sürer. Sonuç dala beş dakika içinde yazılır; yorum, Claude'un görevi çalışıp dala koyduktan sonra beş dakika içinde gelir. Core ayın 1'i 04:00'te kapalıysa aylık koşuyu sonraki 7 gün içinde açılınca yapar. Koşu sürerken core yeniden başlarsa koşu `hata` olur ("core yeniden başladı"); sayfadan yeniden istenir.
 
 ## 5. Hesaplar
 
@@ -163,6 +189,20 @@ Eski sistemin naif kuralı (hakari-trigger-orchestrator) birebir; tek fark ZLEMA
 - Kural ya da parametre değişince yeni sürüm açılır (`v2`); eski sürümün satırları olduğu gibi kalır.
 - Ön izleme ve kararlar: proje dokümanı "Naif kural doğrulaması".
 
+### Kombinasyon simülasyonu (`sim_runs`)
+
+Naif setup'ı hangi değişken koşullarında daha iyi çalışıyor: her koşu `sim_runs`'ta bir satır (istek, durum, sonuç `results`, yorum `comment`). Motor sürümü `v1`.
+
+- **Karar noktası:** her Axi 5m kapanışı. O an son 12h snapshot'ı en çok 60 dakika eski olmalı, bazı ve iki yanda 1. cluster'ı olmalı; cluster'lar baz kadar kaydırılıp Axi fiyatına çevrilir. Snapshot'tan sonra fiyat cluster'lardan birine değdiyse bir sonraki snapshot'a kadar setup yok. Bütün değişkenleri dolu olmayan kararlar dışarıda kalır.
+- **Setup ve işlem:** yön yakın cluster'a; TP yakın mesafenin %75'i, SL uzak mesafenin %75'i, kararın 5m kapanışından; TP en az 60 $. Giriş sonraki 1m mumunun açılışında (10 dakika içinde mum yoksa işlem yok); BUY ask'tan (bid + spread), SELL bid'den. Seviyenin ötesinde açılan mumda açılıştan çıkar; aynı mumda TP ve SL olursa SL. Her yönde aynı anda tek pozisyon.
+- **Değişkenler (işlem yönüne göre):** ZLEMA bölgesi 15m, 1h, 4h, 1d (son 149 kapanmış mum ve karar anına kadarki 1m'lerden oluşan mum; aynı, ters, nötr); L/S açısı global ve TT × 5m, 15m, 1h, 4h (lag 1; aynı ya da ters × 0–15°, 15–30°, 30°+); yakın/uzak cluster mesafesi oranı (0–0,4, 0,4–0,7, 0,7–1).
+- **Arama:** long ve short ayrı. Tekli ve ikili kombinasyonların hepsi, üçlü ve dörtlüler en iyi 20'den genişletilerek. En az 30 işlemliler toplam R'ye göre sıralanır; aynı işlem kümesini veren tekrarlar elenir; her yönün en iyi 10'u.
+- **Şans testi:** işlem sonuçları karar anları arasında rastgele kaydırılıp (dairesel, %10–90 arası) aynı arama 200 kez tekrarlanır. En iyi kombinasyon tekrarların %95'lik değerini geçmiyorsa şansla açıklanabilir. Tohum koşu numarası: aynı veriyle aynı sonuç.
+- **Birleşik:** her yönün en iyisi ayrı yuvalarda; biri açıkken diğerinin sinyali gelirse o da açılır.
+- **Önceki bulgunun denetimi:** bir önceki aylık koşu (yoksa bir önceki koşu); her yönün en iyi 10'undan toplam R'si artıda olanlar, o koşunun verisi bittikten sonraki kararlarla. Tutuyor: en az 10 işlem, toplam R artıda ve işlem başına R aynı dönemin filtresiz tabanından aşağı değil; 10'dan az işlemde "veri az".
+- **sim-data dalı ve Claude'un yorumu:** core sonucu `runs/<id>.json` olarak yazar (`git_commit`; yazılamazsa `git_error`, beş dakikada bir yeniden dener). Claude'un "Hakari Simülasyon Yorumu" zamanlanmış görevi her gün 09:37'de yorumsuz koşuları okuyup `yorum/<id>.json` yazar (talimatlar dalın `ROUTINE.md`'sinde, API ücreti yok). Core dalın ucunu beş dakikada bir okur, yeni ya da değişen yorumu biçimini denetleyip `comment`'e alır; geçersizse almaz, Sağlık sayfasında hata görünür.
+- **Eşleşme:** 27 Ekim'deki Python prototipiyle (naif kombinasyon taraması) aday sayıları, değişkenler, en iyi 10'lar ve birleşik sonuç birebir aynı.
+
 ## 6. DBeaver'da kontrol
 
 ```sql
@@ -241,6 +281,12 @@ LEFT JOIN heatmap_snapshots s ON s.apify_run_id = o.data->>'apify_run_id'
 LEFT JOIN naive_decisions d ON d.snapshot_id = s.id AND d.version = 'v1'
 WHERE o.magic = 7575 ORDER BY o.opened_at DESC LIMIT 20;
 
+-- simülasyon koşuları (İstanbul saati)
+SELECT id, kind AS tur, status AS durum, requested_at AT TIME ZONE 'Europe/Istanbul' AS istendi,
+       finished_at AT TIME ZONE 'Europe/Istanbul' AS bitti, data_to AT TIME ZONE 'Europe/Istanbul' AS veri_sonu,
+       previous_id AS onceki, left(git_commit, 7) AS dal_commit, git_error, comment->>'guven' AS yorum_guveni, error
+FROM sim_runs ORDER BY id DESC LIMIT 10;
+
 -- sağlık
 SELECT source, last_success_at, last_source_time, consecutive_failures, last_error
 FROM collector_status WHERE source LIKE 'core:%' ORDER BY source;
@@ -251,4 +297,5 @@ FROM collector_status WHERE source LIKE 'core:%' ORDER BY source;
 - `core:heatmap` satırında `last_source_time`, seviyesi hesaplanmış son snapshot'ın `received_at`'i.
 - `core:lsr` satırında `last_source_time`, açısı hesaplanmış son L/S noktası; collector'ın `lsr:*` satırlarıyla aynı olmalı (en çok bir dakika geride).
 - `core:naif` satırında `last_source_time`, kararı verilmiş son 12h döngüsü (heatmap'in son sütunu); saatte bir ilerler.
+- `core:sim` satırı son başarılı simülasyon koşusu (`last_source_time` verinin sonu); ayda bir. `core:sim-yorum` satırı `sim-data` dalıyla eşitleme; beş dakikada bir.
 - Hata görürsen `last_error` sebebi söyler; bir sonraki dakika yeniden dener.

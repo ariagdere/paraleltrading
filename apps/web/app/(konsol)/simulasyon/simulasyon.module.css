@@ -1,0 +1,416 @@
+/* Simülasyon: üstte tek cümlelik sonuç ve "Şimdi çalıştır", altında Claude'un yorumu, önceki bulgunun denetimi, dört
+   sayı, toplam R eğrisi, iki yönün en iyileri, verinin kapsamı ve koşular. Renk yalnız yön ve durum için: long yeşil,
+   short turuncu; durum rozetleri globals.css'teki --level'dan (yazı da aynı bilgiyi taşır). */
+
+.hero {
+  max-width: 72rem;
+}
+
+.heroTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.title {
+  font-size: var(--fs-xl);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  flex: 1 1 28rem;
+}
+
+.lead {
+  margin-top: 0.9rem;
+  color: var(--muted);
+  max-width: 62rem;
+  text-wrap: pretty;
+}
+
+.meta {
+  margin-top: 0.6rem;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.notice {
+  margin-top: 0.75rem;
+  padding: 0.55rem 0.8rem;
+  border-left: 4px solid var(--ok);
+  background: color-mix(in srgb, var(--ok) 8%, var(--ink));
+  max-width: 62rem;
+}
+
+.empty,
+.error {
+  margin-top: 2rem;
+  max-width: 62rem;
+}
+
+.error,
+.warn {
+  color: var(--fail);
+}
+
+.runForm {
+  margin: 0;
+}
+
+.runButton {
+  padding: 0.55rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--line-2);
+  background: var(--ink-3);
+  color: var(--text);
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.runButton:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+
+.runButton:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.section {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+  margin-top: 2.75rem;
+}
+
+.section > * {
+  min-width: 0;
+}
+
+.h2 {
+  font-size: var(--fs-md);
+}
+
+.h3 {
+  font-size: var(--fs-base);
+}
+
+.comment {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 2.25rem;
+  padding: 1.1rem 1.25rem;
+  max-width: 72rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--ink-2);
+}
+
+.commentHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.commentLead {
+  font-size: var(--fs-md);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.list {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding-left: 1.2rem;
+  max-width: 82ch;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--level) 75%, var(--text));
+  background: color-mix(in srgb, var(--level) 16%, var(--ink));
+  border: 1px solid color-mix(in srgb, var(--level) 45%, transparent);
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 0.9rem;
+}
+
+.kpi,
+.card {
+  min-width: 0;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--ink-2);
+}
+
+.card {
+  display: grid;
+  gap: 0.6rem;
+  align-content: start;
+}
+
+.kpiLabel,
+.kpiSub {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.kpiValue {
+  margin: 0.25rem 0;
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 34rem), 1fr));
+  gap: 0.9rem;
+}
+
+.scroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: 0.5rem 1.2rem 0.5rem 0;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+}
+
+.table thead th {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  vertical-align: bottom;
+}
+
+.table tbody th {
+  font-weight: 400;
+}
+
+.narrow {
+  max-width: 64rem;
+}
+
+.list2 td,
+.list2 thead th {
+  white-space: nowrap;
+}
+
+.ruleCell {
+  min-width: 18rem;
+}
+
+.conds {
+  min-width: 14rem;
+}
+
+.combinedRow th,
+.combinedRow td {
+  border-top: 1px solid var(--line-2);
+}
+
+.current td {
+  background: var(--ink-2);
+}
+
+.r {
+  text-align: right !important;
+}
+
+.colSub {
+  display: block;
+  font-weight: 400;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.note {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  max-width: 82ch;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.long {
+  color: var(--up);
+  font-weight: 700;
+}
+
+.short {
+  color: color-mix(in srgb, var(--short) 80%, white);
+  font-weight: 700;
+}
+
+.more summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 600;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.rules {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 82ch;
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+/* Eğri: çizgiler ölçeklenen SVG'de, eksen yazıları HTML'de */
+.chart {
+  margin: 0;
+  max-width: 72rem;
+}
+
+.plotArea {
+  position: relative;
+  height: 15rem;
+  margin-left: 3rem;
+  margin-bottom: 1.6rem;
+}
+
+.plot {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.grid {
+  stroke: color-mix(in srgb, var(--line) 80%, transparent);
+  stroke-width: 1;
+}
+
+.zero {
+  stroke: var(--line-2);
+  stroke-width: 1.5;
+}
+
+.lineMain,
+.lineMuted {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+
+.lineMain {
+  stroke: var(--text);
+}
+
+.lineMuted {
+  stroke: var(--idle);
+}
+
+.yAxis span {
+  position: absolute;
+  right: calc(100% + 0.5rem);
+  transform: translateY(-50%);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.xAxis span {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  transform: translateX(-50%);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.5rem;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.legend strong {
+  color: var(--text);
+}
+
+.swatch {
+  display: inline-block;
+  width: 1.1rem;
+  height: 0;
+  margin-right: 0.45rem;
+  vertical-align: middle;
+  border-top: 3px solid;
+}
+
+.swatch.lineMain {
+  border-color: var(--text);
+}
+
+.swatch.lineMuted {
+  border-color: var(--idle);
+}
+
+/* telefonda ikincil sütunlar gizlenir, kalanlar sığar */
+@media (max-width: 600px) {
+  .wide {
+    display: none;
+  }
+
+  .table {
+    font-size: var(--fs-sm);
+  }
+
+  .table th,
+  .table td {
+    padding-right: 0.6rem;
+  }
+
+  .ruleCell {
+    min-width: 7rem;
+  }
+
+  .badge {
+    padding: 0 0.35rem;
+  }
+
+  .conds {
+    min-width: 8rem;
+  }
+
+  .list2 td,
+  .list2 thead th {
+    white-space: normal;
+  }
+
+  .kpi,
+  .comment {
+    padding: 0.9rem;
+  }
+
+  .card {
+    padding: 0.8rem 0.7rem;
+  }
+}
