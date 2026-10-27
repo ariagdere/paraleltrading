@@ -77,19 +77,34 @@
   container-type: inline-size;
 }
 
-/* telefonda menü tek satıra sığsın */
-@media (max-width: 480px) {
+/* telefonda menü tek satıra sığsın: marka gizlenir (bulunulan sayfa menüde işaretli), en darda çıkış düğmesi
+   kısalır; bağlantılar yine sığmazsa sayfa değil yalnız bağlantı şeridi yana kayar */
+@media (max-width: 600px) {
   .nav {
-    gap: 0.6rem;
+    gap: 0.5rem;
   }
 
   .mark {
-    font-size: var(--fs-base);
+    display: none;
+  }
+
+  .links {
+    gap: 0.15rem;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
 
   .link,
   .logoutButton {
-    padding: 0.35rem 0.5rem;
+    padding: 0.35rem 0.45rem;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 400px) {
+  .logoutLong {
+    display: none;
   }
 }
 

@@ -9,8 +9,8 @@ Plan: proje dokümanı "Hakari 2 — Sürekli Veri Akışı Planı".
 |---|---|
 | `packages/db` | Postgres bağlantısı, migration çalıştırıcı, şema (`migrations/`); servislerin ortak sağlık kaydı ve zamanlayıcısı |
 | `apps/collector` | Binance L/S (5 dk), heatmap (saatlik; başarısız olursa aynı saatte yeniden), Axi mumları 1m–1d (dakikada bir; 30 dakikada bir boşluk denetimi), sembol bilgisi ve günlük bias raporları toplayıcı; isteğe bağlı eski DB kopyası; açılışta migration'ları uygular |
-| `apps/core` | Axi göstergeleri: ZLEMA bölgesi, RSI 14, ATR 14 (15m, 1h, 4h, 1d); destek/direnç bölgeleri, olayları ve gösterilecek üstte ve altta en güçlü 3 bölge (Axi 4h ve 1d, her 4h kapanışında); heatmap seviyeleri: cluster'lar, bant likiditesi, baz; L/S açıları (global ve TT; 5m, 15m, 1h, 4h); dakikada bir |
-| `apps/web` | Tarayıcıdan açılan konsol (Next.js): giriş; Piyasa sayfası (canlı fiyat, MetaApi streaming; tek grafik, oluşan mum canlı, ve katmanları: likidasyon heatmap'i, cluster'lar, destek/direnç, önceki gün/hafta; göstergeler, L/S açıları ve son 30 noktanın grafikleri, bias); Sağlık sayfası (her kaynağın son verisi, gecikmeler, hatalar); veritabanını yalnız okur |
+| `apps/core` | Axi göstergeleri: ZLEMA bölgesi, RSI 14, ATR 14 (15m, 1h, 4h, 1d); destek/direnç bölgeleri, olayları ve gösterilecek üstte ve altta en güçlü 3 bölge (Axi 4h ve 1d, her 4h kapanışında); heatmap seviyeleri: cluster'lar, bant likiditesi, baz; L/S açıları (global ve TT; 5m, 15m, 1h, 4h); naif kuralın kararları ve benzetilen işlemleri (doğrulama, her 12h snapshot'ında); dakikada bir |
+| `apps/web` | Tarayıcıdan açılan konsol (Next.js): giriş; Piyasa sayfası (canlı fiyat, MetaApi streaming; tek grafik, oluşan mum canlı, ve katmanları: likidasyon heatmap'i, cluster'lar, destek/direnç, önceki gün/hafta; göstergeler, L/S açıları ve son 30 noktanın grafikleri, bias); Doğrulama sayfası (naif kuralın yeniden oynatması ve ileri izlemesi, gerçek naif işlemlerle karşılaştırma); Sağlık sayfası (her kaynağın son verisi, gecikmeler, hatalar); veritabanını yalnız okur |
 
 ## Kurallar
 

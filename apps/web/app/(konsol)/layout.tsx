@@ -14,7 +14,7 @@ export default function KonsolLayout({ children }: { children: ReactNode }) {
         <NavLinks />
         <form className={s.logout} method="post" action="/api/auth/logout">
           <button className={s.logoutButton} type="submit">
-            Çıkış yap
+            Çıkış<span className={s.logoutLong}> yap</span>
           </button>
         </form>
       </nav>

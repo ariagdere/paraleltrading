@@ -7,6 +7,7 @@ import s from './nav.module.css'
 // Menü bağlantıları; bulunulan sayfa işaretli.
 const LINKS = [
   { href: '/piyasa', label: 'Piyasa' },
+  { href: '/dogrulama', label: 'Doğrulama' },
   { href: '/saglik', label: 'Sağlık' },
 ]
 
