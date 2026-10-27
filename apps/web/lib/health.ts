@@ -31,13 +31,14 @@ export type StatusRow = {
   lastErrorAt: Date | null
 }
 
-export type GroupKey = 'axi' | 'heatmap' | 'lsr' | 'bias' | 'legacy' | 'other'
+export type GroupKey = 'axi' | 'heatmap' | 'lsr' | 'bias' | 'strategy' | 'legacy' | 'other'
 
 export const GROUPS: Array<{ key: GroupKey; title: string; about: string }> = [
   { key: 'axi', title: 'Axi BTCUSD', about: "MetaApi'den kapanmış mumlar; göstergeleri ve destek/direnç bölgelerini core hesaplar." },
   { key: 'heatmap', title: "Likidasyon heatmap'i", about: "CoinGlass model1, Apify ile saatte bir; seviyeleri core hesaplar." },
   { key: 'lsr', title: 'Long/Short oranı', about: "Binance futures, 5 dakikada bir; açıları core hesaplar." },
   { key: 'bias', title: 'Günlük bias', about: 'Claude rutini, hafta içi her gün 09:07; GitHub bias-data dalından.' },
+  { key: 'strategy', title: 'Strateji', about: "Naif kuralın kararları ve benzetilen işlemleri (doğrulama); core her 12h snapshot'ında hesaplar." },
   { key: 'legacy', title: 'Eski sistem', about: "Eski DB'den işlemler ve olaylar, saatte bir (salt okunur)." },
   { key: 'other', title: 'Diğer', about: 'Bu sayfanın tanımadığı kaynaklar.' },
 ]
@@ -98,6 +99,10 @@ export const CATALOG: Def[] = [
     upstream: ['lsr:global', 'lsr:top_position'],
   },
   { source: 'bias', group: 'bias', label: 'Rapor', name: 'Günlük bias', kind: 'bias', critical: true },
+  {
+    source: 'core:naif', group: 'strategy', label: 'Naif kural', name: 'Naif kural kararları', kind: 'snapshot', critical: false,
+    dataWord: 'son döngü', upstream: ['core:heatmap'],
+  },
   { source: 'legacy', group: 'legacy', label: 'İşlem kopyası', name: 'Eski sistem kopyası', kind: 'job', critical: false },
 ]
 

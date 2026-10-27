@@ -1,0 +1,122 @@
+/* Doğrulama: üstte tek cümlelik sonuç, altında iki dönemin özeti, benzetimin gerçeğe yakınlığı, işlem tabloları ve
+   kuralın kendisi. Renk yalnız sonuç ve yön için: TP ve long yeşil, SL ve short turuncu (oklar ve yazı da aynı bilgiyi
+   taşır). */
+
+.hero {
+  max-width: 64rem;
+}
+
+.title {
+  font-size: var(--fs-xl);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.lead {
+  margin-top: 0.9rem;
+  color: var(--muted);
+  max-width: 62rem;
+  text-wrap: pretty;
+}
+
+.section {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+  margin-top: 2.75rem;
+}
+
+.section > * {
+  min-width: 0;
+}
+
+.h2 {
+  font-size: var(--fs-md);
+}
+
+.scroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: 0.5rem 1.4rem 0.5rem 0;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+}
+
+.table thead th {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  vertical-align: bottom;
+}
+
+.table tbody th {
+  font-weight: 600;
+}
+
+/* özet ve yakınlık tabloları dar: etiket sütunu ve iki-üç sayı sütunu */
+.narrow {
+  max-width: 64rem;
+}
+
+.list th,
+.list td {
+  white-space: nowrap;
+}
+
+.r {
+  text-align: right !important;
+}
+
+.colSub,
+.rowNote {
+  display: block;
+  font-weight: 400;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.note {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  max-width: 82ch;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.long,
+.tp {
+  color: var(--up);
+  font-weight: 600;
+}
+
+.short,
+.sl {
+  color: color-mix(in srgb, var(--short) 80%, white);
+  font-weight: 600;
+}
+
+.diff {
+  display: block;
+  color: var(--late);
+  font-size: var(--fs-sm);
+}
+
+.rules {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 82ch;
+  margin: 0;
+  padding-left: 1.2rem;
+}

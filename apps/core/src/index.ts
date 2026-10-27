@@ -1,11 +1,12 @@
 // core: collector'ın ham verilerinden hesaplanan değerleri Postgres'e yazan süreç. Axi göstergeleri (ZLEMA bölgesi,
 // RSI, ATR; 15m, 1h, 4h, 1d), destek/direnç bölgeleri (Axi 4h ve 1d'den), heatmap seviyeleri (cluster'lar, bant
-// likiditesi, baz) ve L/S açıları (global ve TT; 5m, 15m, 1h, 4h). Açılışta migration'ları uygular ve eksikleri
-// hesaplar; sonra dakikada bir (saniye 20, collector'ın mum turundan sonra) yeni ya da düzeltilmiş mumları, yeni
-// heatmap snapshot'larını ve L/S noktalarını işler.
+// likiditesi, baz), L/S açıları (global ve TT; 5m, 15m, 1h, 4h) ve naif kuralın kararları ile benzetilen işlemleri
+// (doğrulama). Açılışta migration'ları uygular ve eksikleri hesaplar; sonra dakikada bir (saniye 20, collector'ın mum
+// turundan sonra) yeni ya da düzeltilmiş mumları, yeni heatmap snapshot'larını ve L/S noktalarını işler.
 import { createPool, every, migrate, type Job, type Pool } from '@pt/db'
 import { syncHeatmapLevels } from './heatmap.js'
 import { syncLsrAngles } from './lsr.js'
+import { syncNaive } from './naif.js'
 import { syncZones } from './sr.js'
 import { syncIndicators } from './sync.js'
 
@@ -46,6 +47,7 @@ const turn = () =>
     .then(() => syncZones(pool))
     .then(() => syncHeatmapLevels(pool))
     .then(() => syncLsrAngles(pool))
+    .then(() => syncNaive(pool))
 const first = turn()
 
 async function stop(signal: string) {

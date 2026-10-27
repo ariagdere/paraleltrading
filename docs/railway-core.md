@@ -1,11 +1,12 @@
 # core servisi (Railway)
 
-core, collector'ın yazdığı ham verilerden hesaplanan değerleri üretip aynı Postgres'e yazan ikinci süreç. Dört hesap yapıyor:
+core, collector'ın yazdığı ham verilerden hesaplanan değerleri üretip aynı Postgres'e yazan ikinci süreç. Beş hesap yapıyor:
 
 - **Axi göstergeleri** (`axi_indicators`): ZLEMA bölgesi, RSI 14 ve ATR 14; 15m, 1h, 4h ve 1d dilimlerinde her kapanmış mum için.
 - **Destek/direnç bölgeleri** (`sr_zones`, `sr_zone_events`): Axi 4h ve 1d mumlarından; her bölgenin belirdiği ve bittiği an, sabit bandı, gücü, hangi dilimlerden geldiği, olayları (test, tuttu, kırıldı) ve ekranda gösterilip gösterilmediği. Her 4h kapanışında.
 - **Heatmap seviyeleri** (`heatmap_levels`): her heatmap snapshot'ı (12h, 24h, 48h) için her yönde en çok 3 cluster, %1/2/3 bant likiditesi ve heatmap fiyatı ile Axi fiyatı arasındaki baz.
 - **L/S açıları** (`lsr_angles`): global ve TT pozisyon oranı için 5m, 15m, 1h ve 4h dilimlerinde serinin her noktasında açı.
+- **Naif kural kararları** (`naive_decisions`): eski sistemin naif kuralının yeni sistemin verisiyle yeniden oynatılması ve ileri izlemesi (doğrulama). 18 Eylül'den bu yana her 12h snapshot'ında karar ve sinyalse Axi 1m mumlarıyla benzetilen işlem.
 
 collector'la aynı repodan ikinci bir servis: kod aynı, başlatma komutu ve izlenen yollar farklı. Böylece core'a gelen bir değişiklik collector'ı yeniden başlatmaz, core'daki bir hata da veri toplamayı durdurmaz. İkisi aynı Postgres'i kullanır.
 
@@ -38,6 +39,7 @@ Start Command'in npm üzerinden değil doğrudan node ile olması collector'daki
 | Değişken | Değer |
 |---|---|
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
+| `NAIVE_FROM` | İsteğe bağlı: naif kararların başladığı an; varsayılan `2026-09-18T00:00:00Z` |
 
 Başka değişken gerekmiyor; core dış servislere bağlanmıyor. `Postgres` yerine kanvastaki Postgres servisinin adı yazılır (`${{` yazınca açılan listeden seçmek en güvenlisi).
 
@@ -54,6 +56,7 @@ Başka değişken gerekmiyor; core dış servislere bağlanmıyor. `Postgres` ye
 [core] heatmap: ... snapshot hesaplandı
 [core] L/S açıları (global): ... satır yazıldı
 [core] L/S açıları (top_position): ... satır yazıldı
+[core] naif: ... karar (... sinyal, ... açık işlem); ... satır yazıldı, 0 silindi
 ```
 
 - Yeni bir migration'ı (ör. `006_destek_direnc.sql`) hangi servis önce açılırsa o uygular. `packages/db`'yi değiştiren bir merge collector'ı, core'u ve web'i birlikte yeniden başlatır; migration'ı büyük ihtimalle collector uygular (`uygulandı: 006_destek_direnc.sql`), core sonra açılınca "şema güncel" yazar. Heatmap turuna denk gelmesin diye böyle merge'leri xx:00–xx:06 dışında yap.
@@ -62,6 +65,7 @@ Başka değişken gerekmiyor; core dış servislere bağlanmıyor. `Postgres` ye
 - Destek/direnç ilk açılışta bütün 4h geçmişini (Nisan'dan) baştan oynatır, bir saniye kadar sürer. Sonra her yeni 4h ya da 1d kapanışında (günde 6 kez) ve bu dilimlerde bir mum düzeltilince ya da araya eklenince yeniden oynatır; yalnız değişen satırları yazar (her 4h kapanışında geçerli bölgelerin puanı ve yeni olaylar, birkaç on satır).
 - Heatmap seviyeleri ilk açılışta bütün snapshot'lar için hesaplanır: eski sistemden kopyalanan 12h'ler ve collector'ın yazdıkları (yaklaşık 900). Sonra her yeni snapshot bir sonraki dakika işlenir.
 - L/S açıları ilk açılışta bütün seri için hesaplanır (metrik başına ~18 bin satır, bir saniye kadar). Sonra yeni 5m noktası geldikçe (5 dakikada bir) yalnız yeni satırlar yazılır.
+- Naif kararlar ilk açılışta 18 Eylül'den bu yana bütün 12h snapshot'ları için hesaplanır (eski sistemden kopyalananlar ve collector'ın saatlik 12h'leri; birkaç saniye). Sonra her turda girdilerden biri değişince (yeni 1m mumu, yeni snapshot ya da seviye) baştan hesaplanır, yalnız değişen satırlar yazılır: yeni snapshot gelince ya da açık bir işlem kapanınca log satırı düşer.
 - Beklenmeyen biçimde bir snapshot olursa `[core] heatmap 123 (12h): seviye çıkmadı` yazar; o snapshot boş satırla işaretlenir, yeniden denenmez.
 - Deploy sırasında eski süreç kapanana kadar yenisi `başka bir core çalışıyor; kilit bekleniyor` yazar.
 
@@ -137,6 +141,28 @@ Formül eski sistemin (hakari-lsr-refresher `lsrAngle.js`); her metrik (`global`
 - Referans serinin başından bütün pencerelere bağlı. Seri 30 Ağustos'ta başladığı için ilk açı 5m'de ~11 saat, 15m'de ~32 saat, 1h'de ~5 gün, 4h'de ~21 gün sonra; 18 Eylül'den sonra dört dilimde de açı var.
 - Eski sistem `t` anındaki açıyı ts ≤ t − dilim olan son noktadan alıyordu (lag 1). O nokta t − dilim'den iki dilim ya da daha eskiyse açı yok sayılıyordu. Aşağıdaki sorgu bunu yapıyor.
 
+### Naif kural kararları (`naive_decisions`)
+
+Eski sistemin naif kuralı (hakari-trigger-orchestrator) birebir; tek fark ZLEMA 4h bölgesinin kaynağı: eski sistem Binance vadeli 4h, core Axi 4h. Her 12h heatmap snapshot'ı için bir satır, sürüm `v1`. Gerçek naif işlemlerle (eski sistemin magic 7575 emirleri, `legacy_orders`) karşılaştırma web'in Doğrulama sayfasında.
+
+| Sütun | Hesap |
+|---|---|
+| `cycle_at`, `decided_at` | Döngü anı: heatmap'in son sütunu. Karar anı: döngü + 45 sn (eski sistemde heatmap'ten emre ölçülen medyan gecikme) |
+| `ref_price`, `up_price`, `dn_price`, `basis` | Snapshot'ın seviyeleri (`heatmap_levels`): referans fiyat ve iki yandaki 1. cluster |
+| `direction`, `entry_ref`, `tp`, `sl`, `rr` | Setup: yakın cluster'ın yönü; TP yakın cluster'a mesafenin %75'i, SL uzak cluster'a mesafenin %75'i. İki ondalık ve heatmap fiyatıyla: eski sistem emri bu fiyatlarla gönderiyordu |
+| `zone_4h`, `aligned` | Karar anındaki ZLEMA 4h bölgesi: Axi 4h'nin son 149 kapanmış mumu ve oluşan mum (karar anına kadar kapanmış 1m mumlarından). Yön bölgeyle aynıysa `aligned` |
+| `in_window` | Eski sistemin o tarihteki penceresi: 9 Ekim 15:40'a kadar hafta içi (bütün gün), sonra pazartesi 00:00 – cuma 15:05 (İstanbul, döngü anına göre) |
+| `signal`, `reason` | Hizalı ve penceredeyse sinyal: eski sistem emir gönderirdi. Değilse neden: `seviye_yok`, `cluster_yok`, `bolge_yok`, `bolge_farkli`, `pencere_disi`. Sinyal benzetilemediyse `fiyat_yok` (karar anında Axi mumu yok) ya da `gecersiz_seviye` (TP ya da SL Axi fiyatının yanlış tarafında) |
+| `entry_bid`, `entry_price`, `spread` | Karar anını içeren Axi 1m mumunun açılışı (bid). BUY ask'tan (bid + spread), SELL bid'den girer. Spread mumun `spread_points` × point'i; mumda yoksa 12 $ |
+| `exit_at`, `exit_reason`, `exit_price` | Sonraki 1m mumlarında ilk dokunan seviye; BUY bid'le, SELL ask'la çıkar. Mum seviyenin ötesinde açılırsa açılıştan çıkar; TP ve SL aynı mumdaysa SL sayılır (`ambiguous`). Açık işlemde boş |
+| `r_multiple`, `mfe`, `mae` | R girişe ve SL'e göre; girişten en iyi ve en kötü hareket ($) |
+
+- Her karar yalnız karar anına kadar bilinenle verilir; işlem sonraki mumlarla ilerler.
+- collector'ın ilk snapshot'ına kadarki 12h'ler eski döngülerin kendisi (eski sistemden kopyalanan, aynı Apify çalıştırması): yeniden oynatma. Sonrası collector'ın saatlik 12h snapshot'ları: ileri izleme.
+- Bir 1m mumu sonradan düzelirse ya da araya eklenirse geçmişteki işlemler de düzelir. Tablo elle silinirse core bir sonraki turda yeniden yazar.
+- Kural ya da parametre değişince yeni sürüm açılır (`v2`); eski sürümün satırları olduğu gibi kalır.
+- Ön izleme ve kararlar: proje dokümanı "Naif kural doğrulaması".
+
 ## 6. DBeaver'da kontrol
 
 ```sql
@@ -192,6 +218,29 @@ WHERE metric = 'global' AND period = '1h'
   AND ts > timestamptz '2026-10-16 10:30+03' - interval '1 hour' - interval '2 hours'
 ORDER BY ts DESC LIMIT 1;
 
+-- son naif kararlar (İstanbul saati)
+SELECT cycle_at AT TIME ZONE 'Europe/Istanbul' AS dongu, direction AS yon, zone_4h AS bolge, signal AS sinyal, reason AS neden,
+       round(tp::numeric) AS tp, round(sl::numeric) AS sl, round(entry_price::numeric) AS giris, exit_reason AS cikis,
+       round(r_multiple::numeric, 2) AS r
+FROM naive_decisions WHERE version = 'v1' ORDER BY cycle_at DESC LIMIT 12;
+
+-- naif sinyaller ve sonuçları, gün gün (İstanbul)
+SELECT (cycle_at AT TIME ZONE 'Europe/Istanbul')::date AS gun, count(*) AS karar, count(*) FILTER (WHERE signal) AS sinyal,
+       count(*) FILTER (WHERE exit_reason = 'TP') AS tp, count(*) FILTER (WHERE exit_reason = 'SL') AS sl,
+       count(*) FILTER (WHERE entry_price IS NOT NULL AND exit_reason IS NULL) AS acik, round(sum(r_multiple)::numeric, 2) AS r
+FROM naive_decisions WHERE version = 'v1' GROUP BY 1 ORDER BY 1 DESC;
+
+-- sinyal olmayan kararların nedenleri
+SELECT reason AS neden, count(*) AS adet FROM naive_decisions WHERE version = 'v1' AND NOT signal GROUP BY 1 ORDER BY 2 DESC;
+
+-- gerçek naif işlemler ve aynı Apify çalıştırmasındaki karar (eşleşmeyenlerde karar boş)
+SELECT o.opened_at AT TIME ZONE 'Europe/Istanbul' AS acilis, o.direction AS yon, o.data->>'exit_reason' AS gercek_cikis,
+       d.signal AS sinyal, d.reason AS neden, d.exit_reason AS benzetim_cikis
+FROM legacy_orders o
+LEFT JOIN heatmap_snapshots s ON s.apify_run_id = o.data->>'apify_run_id'
+LEFT JOIN naive_decisions d ON d.snapshot_id = s.id AND d.version = 'v1'
+WHERE o.magic = 7575 ORDER BY o.opened_at DESC LIMIT 20;
+
 -- sağlık
 SELECT source, last_success_at, last_source_time, consecutive_failures, last_error
 FROM collector_status WHERE source LIKE 'core:%' ORDER BY source;
@@ -201,4 +250,5 @@ FROM collector_status WHERE source LIKE 'core:%' ORDER BY source;
 - `core:sr` satırında `last_source_time`, bölgeleri hesaplanmış son 4h mumunun açılışı; `axi:4h` satırıyla aynı olmalı (en çok bir dakika geride).
 - `core:heatmap` satırında `last_source_time`, seviyesi hesaplanmış son snapshot'ın `received_at`'i.
 - `core:lsr` satırında `last_source_time`, açısı hesaplanmış son L/S noktası; collector'ın `lsr:*` satırlarıyla aynı olmalı (en çok bir dakika geride).
+- `core:naif` satırında `last_source_time`, kararı verilmiş son 12h döngüsü (heatmap'in son sütunu); saatte bir ilerler.
 - Hata görürsen `last_error` sebebi söyler; bir sonraki dakika yeniden dener.

@@ -1,8 +1,9 @@
 # web servisi (Railway)
 
-web, Hakari 2'nin tarayıcıdan açılan yüzü. İki sayfa var:
+web, Hakari 2'nin tarayıcıdan açılan yüzü. Üç sayfa var:
 
 - **Piyasa** (girişten sonra açılan sayfa): canlı Axi BTCUSD fiyatı; tek temel grafik (oluşan mum canlı) ve düğmeyle açılıp kapanan katmanlar (likidasyon heatmap'i, cluster'lar, destek/direnç bölgeleri, önceki gün/hafta seviyeleri); ZLEMA/RSI/ATR, Long/Short oranı, açıları ve son 30 noktanın grafikleri, günlük bias.
+- **Doğrulama**: eski sistemin naif kuralının yeni sistemin verisiyle yeniden oynatılması ve ileri izlemesi; gerçek naif işlemlerle karşılaştırma.
 - **Sağlık**: her veri kaynağının son verisinin ne zaman geldiği, sıradakinin ne zaman beklendiği, gecikenler ve hatalar.
 
 collector ve core'la aynı repodan üçüncü bir servis. Veritabanına yalnız okumak için bağlanır: oturumlar salt okunur açılır (`default_transaction_read_only`), web hiçbir tabloya yazamaz. Kullanıcı adı ve şifre Railway değişkenlerinde; giriş yapılmadan hiçbir sayfa ve veri açılmaz. Canlı fiyat için MetaApi'ye tek bir streaming bağlantısı açar (yalnız BTCUSD quote'ları; işlem yapmaz, hesabı deploy etmez).
@@ -72,6 +73,7 @@ Route (app)
 ├ ƒ /api/piyasa/canli
 ├ ƒ /api/piyasa/heatmap
 ├ ƒ /api/piyasa/mumlar
+├ ƒ /dogrulama
 ├ ƒ /login
 ├ ƒ /piyasa
 └ ƒ /saglik
@@ -95,7 +97,7 @@ Adresi açınca giriş sayfası gelir. Girişten sonra Piyasa sayfası açılır
 - Oturum imzalı bir çerezde (`hakari2_session`); sunucuda oturum tablosu yok. 30 gün geçerli, kullandıkça uzar; girişten 90 gün sonra yeniden giriş istenir.
 - Aynı IP'den 15 dakikada 10 hatalı denemede o IP 15 dakika kilitlenir (servis yeniden başlayınca sayaç sıfırlanır).
 - Başka bir siteden gönderilen form ve yazan istekler reddedilir.
-- Menüdeki "Çıkış yap" çerezi siler.
+- Menüdeki "Çıkış yap" (telefonda "Çıkış") çerezi siler.
 
 ## 7. Piyasa sayfası
 
@@ -131,7 +133,21 @@ Sayfanın dakikalık yenilemesi büyük veriyi yeniden göndermez, yalnız "değ
 
 Canlı akış tarayıcıda sekme başına tek bağlantı; sekme 30 sn arka planda kalınca kapanır, dönünce yeniden açılır. Sunucuda bütün tarayıcılar MetaApi'ye açılan tek bağlantıyı paylaşır. 30 sn quote gelmezse (piyasa arası) başlıkta "son quote" ve saati yazar, grafik son 1m kapanışına döner.
 
-## 8. Sağlık sayfası nasıl karar veriyor
+## 8. Doğrulama sayfası
+
+Eski sistemin naif kuralı yeni sistemin verisiyle ne kadar aynı çalışıyor: kararları ve benzetilen işlemleri core hesaplar (`naive_decisions`; kural ve sütunlar core dokümanının 5. bölümünde), sayfa bunları eski sistemin gerçek naif işlemleriyle (magic 7575, `legacy_orders`) karşılaştırır. Dakikada bir kendini yeniler; saatler İstanbul saati.
+
+- **Başlık:** tek cümle: kaç gerçek naif işlemin karşılığında yeni sistemin de aynı sinyali verdiği, kapananlarda sonucun aynı olup olmadığı.
+- **Özet:** iki dönem yan yana. *Yeniden oynatma*: eski sistemden kopyalanan 12h snapshot'ları, yani eski döngülerin kendisi. *İleri izleme*: collector'ın saatlik 12h snapshot'ları. Satırlar: karar, sinyal, gerçek naif işlem, karşılığında sinyal olan, TP ve SL aynı (±1 kuruş), sonuç aynı, R (gerçek ve benzetim, ikisi de kapanmış aynı işlemlerde), sinyal çıkmayan gerçek işlemler ve nedenleri, gerçek karşılığı olmayan sinyaller ve benzetim R'leri.
+- **Benzetimin gerçeğe yakınlığı:** eşleşen sinyallerde giriş farkı (gerçek dolum − benzetim girişi, aleyhe pozitif), gecikme (gerçek açılış − karar anı), TP dolumu, SL kayması ve çıkış anı farkı; %10, medyan ve %90. Sanal broker bu ölçülerle ayarlanacak.
+- **Gerçek naif işlemler ve karşılıkları:** en yeni üstte. Açılış, yön, dolum, TP/SL (benzetiminki farklıysa altında), gerçek sonuç (R ve süre), benzetimin sonucu ya da sinyal çıkmama nedeni, giriş farkı, eşleşme şekli.
+- **Gerçek işlemi olmayan sinyaller** ve **kural** (setup, bölge, pencere, işlem benzetimi).
+
+Eşleşme: gerçek emir önce aynı Apify çalıştırmasının kararıyla eşleşir (`apify_run_id`). Çalıştırma tutmazsa (ileri izlemede snapshot'lar ayrı, eski sistemin bazı snapshot'ları da kopyalanmamış) emrin ±20 dakikasındaki karar alınır, aynı yönde sinyal olan önce. Her karar tek gerçek işleme eşleşir. Gerçek R: LONG (kapanış − dolum) / (dolum − SL), SHORT tersi.
+
+Core kararları henüz yazmadıysa sayfa "Henüz karar yok" der.
+
+## 9. Sağlık sayfası nasıl karar veriyor
 
 Sayfa `collector_status` ve `collector_runs` tablolarını okur, 30 saniyede bir kendini yeniler (sekme arka plandaysa yenilemez). Bütün saatler İstanbul saati.
 
@@ -144,6 +160,7 @@ Her kaynak için "sıradaki veri ne zaman gelmeliydi" hesaplanır. Beklenen anda
 | L/S global, top trader ve açılar | son noktadan 5 dk sonra | 7 dk |
 | Bakım işleri: boşluk denetimi, sembol bilgisi, Apify bütçesi, eski sistem kopyası | son başarılı çalışmadan işin aralığı kadar sonra | aralığın %10'u, en az 2 dk; en çok sarı |
 | Geçmiş doldurma | izlenmez, yalnız hata | en çok sarı |
+| Naif kural kararları | son döngüden 1 saat sonra; kaynağı heatmap seviyeleri | 15 dk |
 | Günlük bias | hafta içi 09:07 | hafta içi 12:00'ye kadar bugünkü rapor yoksa kırmızı; öncesinde "bekleniyor", hafta sonu rapor beklenmez; okuma hatası rapor gecikmedikçe sarı |
 
 - Kaynak hata veriyorsa (`consecutive_failures > 0`) satırda son hata ve kaç kez üst üste olduğu yazar. Veri hâlâ zamanındaysa ve hata 3 kez üst üste değilse sarı (geçici: zaman aşımı, tekrar deneniyor), değilse kırmızı.
@@ -152,7 +169,7 @@ Her kaynak için "sıradaki veri ne zaman gelmeliydi" hesaplanır. Beklenen anda
 - "Son hatalar" tablosu son 7 günün en yeni 12 hatası (`collector_runs`'taki başarısız kayıtlar). Heatmap'te her başarısız deneme ayrı satırdır.
 - Çubuk son veriden bu yana geçen süreyi gösterir: çentikte sıradaki veri beklenir, sarı bölgeye geçerse gecikmeli, sona dayanırsa durdu.
 
-## 9. Yerelde çalıştırma
+## 10. Yerelde çalıştırma
 
 ```
 DATABASE_URL="<Postgres'in DATABASE_PUBLIC_URL'i>" PGSSL=true WEB_USER=ari WEB_PASSWORD=deneme \
