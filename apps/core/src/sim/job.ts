@@ -6,12 +6,13 @@ import { branchHead, gh, listDir, putFile, readFile } from './github.js'
 // Simülasyon işi (dakikada bir): her ayın 1'inde 04:00'te (İstanbul) o ayın koşusunu sıraya koyar (core o an
 // kapalıysa sonraki 7 gün içinde), sıradaki koşuyu (aylık ya da web'den istenen) çalıştırır. Hesap olay döngüsünü
 // bekletmesin diye arada bir nefes alır; core'un diğer işleri sürer.
-// Beş dakikada bir sim-data dalıyla eşitlenir: yazılmamış sonuçları yazar, yeni yorumları alır.
+// Dakikada bir sim-data dalıyla eşitlenir: yazılamamış sonuçları yeniden dener, dalın ucu değiştiyse yeni yorumları
+// alır (rutin yorumu koyduktan en geç bir dakika sonra sayfada).
 // Yarıda kalan koşu (core yeniden başladı) "hata" olur; web'den yeniden istenebilir.
 
 const IST = 3 * 3_600_000
 const MONTHLY_GRACE_MS = 7 * 86_400_000
-const GIT_EVERY_MS = 5 * 60_000
+const GIT_EVERY_MS = 60_000
 
 // Ayın 1'i 04:00 İstanbul (01:00 UTC).
 export function monthlySlot(now: number): number {
@@ -263,24 +264,29 @@ export async function syncGit(pool: Pool) {
           rows: [run],
         } = await pool.query<{ comment_sha: string | null }>(`SELECT comment_sha FROM sim_runs WHERE id = $1`, [id])
         if (!run || run.comment_sha === f.sha || rejected.get(f.path) === f.sha) continue
+        // okuma hatası (ağ, kota) bütün eşitlemeyi düşürür, uç kaydedilmez, bir sonraki turda yeniden denenir;
+        // yalnız biçimi geçersiz dosya o haliyle bir daha denenmez
+        const text = await readFile(f.path, head)
+        let c: Comment
         try {
-          const c = parseComment(await readFile(f.path, head), id)
-          await pool.query(`UPDATE sim_runs SET comment = $2, comment_sha = $3, comment_at = now() WHERE id = $1`, [id, JSON.stringify(c), f.sha])
-          console.log(`[core] simülasyon #${id} yorumu alındı`)
+          c = parseComment(text, id)
         } catch (err) {
           rejected.set(f.path, f.sha)
           const msg = `${f.path}: ${(err as Error).message}`
           console.error(`[core] simülasyon yorumu alınmadı: ${msg}`)
           await logRun(pool, { source, startedAt, ok: false, error: msg })
+          continue
         }
+        await pool.query(`UPDATE sim_runs SET comment = $2, comment_sha = $3, comment_at = now() WHERE id = $1`, [id, JSON.stringify(c), f.sha])
+        console.log(`[core] simülasyon #${id} yorumu alındı`)
       }
       seenHead = head
     }
-    await markOk(pool, source, '5 minutes')
+    await markOk(pool, source, '1 minute')
   } catch (err) {
     const msg = (err as Error).message
     console.error(`[core] simülasyon dalı: ${msg}`)
     await logRun(pool, { source, startedAt, ok: false, error: msg })
-    await markFail(pool, source, '5 minutes', msg)
+    await markFail(pool, source, '1 minute', msg)
   }
 }

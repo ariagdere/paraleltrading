@@ -61,10 +61,12 @@ export default async function SimulasyonPage({ searchParams }: Props) {
   const { now, runs, run } = data
   const pending = runs.find((r) => r.status === 'istendi' || r.status === 'calisiyor') ?? null
   const res = run?.results ?? null
+  // koşu sürerken 15 sn; sonuç dalda ve yorum bekleniyorsa dakikada bir (core dalı dakikada bir okur); yoksa 5 dk
+  const awaitingComment = run?.status === 'bitti' && !run.comment && !!run.gitCommit
 
   return (
     <>
-      <AutoRefresh everyMs={pending ? 15_000 : 300_000} />
+      <AutoRefresh everyMs={pending ? 15_000 : awaitingComment ? 60_000 : 300_000} />
       <header className={s.hero}>
         <div className={s.heroTop}>
           <h1 className={s.title}>{res ? <Headline r={res} /> : 'Simülasyon'}</h1>
@@ -184,7 +186,7 @@ function CommentCard({ run, now }: { run: RunDetail; now: Date }) {
         </h2>
         <p className={s.muted}>
           {run.gitCommit
-            ? "Bekleniyor: Claude rutini her gün 09:37'de yorumsuz koşulara bakar; istersen Claude uygulamasında zamanlanmış görevi şimdi çalıştırabilirsin."
+            ? "Bekleniyor: Claude rutini her gün 09:37'de yorumsuz koşulara bakar; istersen Claude uygulamasında zamanlanmış görevi şimdi çalıştırabilirsin. Yorum dala düştükten sonra en geç iki dakika içinde burada görünür."
             : 'Sonuç henüz sim-data dalına yazılmadı; yazılınca Claude rutini yorumlar.'}
         </p>
       </section>

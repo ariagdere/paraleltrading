@@ -150,7 +150,7 @@ Core kararları henüz yazmadıysa sayfa "Henüz karar yok" der.
 
 ## 9. Simülasyon sayfası
 
-Naif setup'ın kombinasyon taraması: core her ayın 1'inde 04:00'te (İstanbul) ve bu sayfadaki **Şimdi çalıştır**la çalıştırır (hesap core dokümanının 5. bölümünde, "Kombinasyon simülasyonu"). Sayfa son biten koşuyu gösterir; aşağıdaki listeden eski bir koşu seçilebilir (`?kosu=<numara>`). Koşu sıradayken ya da çalışırken düğme kilitlidir ve sayfa 15 saniyede bir yenilenir; başka zaman 5 dakikada bir.
+Naif setup'ın kombinasyon taraması: core her ayın 1'inde 04:00'te (İstanbul) ve bu sayfadaki **Şimdi çalıştır**la çalıştırır (hesap core dokümanının 5. bölümünde, "Kombinasyon simülasyonu"). Sayfa son biten koşuyu gösterir; aşağıdaki listeden eski bir koşu seçilebilir (`?kosu=<numara>`). Koşu sıradayken ya da çalışırken düğme kilitlidir ve sayfa 15 saniyede bir yenilenir; sonuç dalda ve yorum bekleniyorsa dakikada bir, başka zaman 5 dakikada bir.
 
 - **Başlık:** her yön için tek cümle: en iyi kombinasyon şans testinden ayrışıyor mu.
 - **Claude'un yorumu:** özet, önceki bulgu hakkında değerlendirme, bulgular, öneriler ve güven. Yorum Claude'un "Hakari Simülasyon Yorumu" zamanlanmış görevinden gelir (her gün 09:37, yorumsuz koşu varsa); gelene kadar "Bekleniyor" yazar. Hemen istenirse Claude uygulamasında görev elle çalıştırılabilir.
@@ -172,7 +172,7 @@ Her kaynak için "sıradaki veri ne zaman gelmeliydi" hesaplanır. Beklenen anda
 | Bakım işleri: boşluk denetimi, sembol bilgisi, Apify bütçesi, eski sistem kopyası | son başarılı çalışmadan işin aralığı kadar sonra | aralığın %10'u, en az 2 dk; en çok sarı |
 | Geçmiş doldurma | izlenmez, yalnız hata | en çok sarı |
 | Naif kural kararları | son döngüden 1 saat sonra; kaynağı heatmap seviyeleri | 15 dk |
-| Kombinasyon simülasyonu, simülasyon dalı eşitlemesi | son başarılı koşudan 32 gün sonra; eşitleme 5 dk | bakım işleri gibi; en çok sarı |
+| Kombinasyon simülasyonu, simülasyon dalı eşitlemesi | son başarılı koşudan 32 gün sonra; eşitleme 1 dk | bakım işleri gibi; en çok sarı |
 | Günlük bias | hafta içi 09:07 | hafta içi 12:00'ye kadar bugünkü rapor yoksa kırmızı; öncesinde "bekleniyor", hafta sonu rapor beklenmez; okuma hatası rapor gecikmedikçe sarı |
 
 - Kaynak hata veriyorsa (`consecutive_failures > 0`) satırda son hata ve kaç kez üst üste olduğu yazar. Veri hâlâ zamanındaysa ve hata 3 kez üst üste değilse sarı (geçici: zaman aşımı, tekrar deneniyor), değilse kırmızı.

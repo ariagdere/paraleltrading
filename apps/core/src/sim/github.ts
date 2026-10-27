@@ -1,7 +1,7 @@
 // sim-data dalı (paraleltrading reposu): core koşu sonuçlarını runs/<id>.json olarak yazar, Claude rutini yorumunu
 // yorum/<id>.json olarak koyar. Yazmak için SIM_GITHUB_TOKEN (yalnız bu repoya Contents: read and write izinli
-// fine-grained token; Railway değişkeni). Okuma token'sız da çalışır (repo açık); dalın ucu git'in akıllı HTTP
-// ucundan okunur (API kotası harcamaz), liste ve dosyalar contents API'sinden.
+// fine-grained token; Railway değişkeni). Okuma token'sız da çalışır (repo açık). Dalın ucu token varsa REST API'den,
+// yoksa git'in akıllı HTTP ucundan (API kotası harcamaz); liste ve dosyalar contents API'sinden.
 
 const trim = (s: string) => s.replace(/\/+$/, '')
 
@@ -13,11 +13,11 @@ export const gh = {
   apiUrl: trim(process.env.GITHUB_API_URL || 'https://api.github.com'),
 }
 
-const headers = (accept = 'application/vnd.github+json') => ({
+const headers = (accept = 'application/vnd.github+json', auth = true) => ({
   'User-Agent': 'paraleltrading-core',
   Accept: accept,
   'X-GitHub-Api-Version': '2022-11-28',
-  ...(gh.token ? { Authorization: `Bearer ${gh.token}` } : {}),
+  ...(auth && gh.token ? { Authorization: `Bearer ${gh.token}` } : {}),
 })
 
 export class GitHubError extends Error {
@@ -29,27 +29,41 @@ export class GitHubError extends Error {
   }
 }
 
-async function call(method: string, url: string, body?: unknown, accept?: string): Promise<string> {
+async function call(method: string, url: string, body?: unknown, accept?: string, auth = true): Promise<string> {
   const res = await fetch(url, {
     method,
-    headers: { ...headers(accept), ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    headers: { ...headers(accept, auth), ...(body ? { 'Content-Type': 'application/json' } : {}) },
     body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(30_000),
   })
   const text = await res.text()
   if (!res.ok) {
+    // token yalnız gönderildiyse suçlanır; hangi istek düştüğü de yazılır
     const quota = res.status === 403 && res.headers.get('x-ratelimit-remaining') === '0' ? ' (GitHub API kotası doldu)' : ''
-    const auth = res.status === 401 || (res.status === 403 && !quota) ? ' (SIM_GITHUB_TOKEN geçersiz ya da bu repoya yazma izni yok)' : ''
-    throw new GitHubError(res.status, `GitHub HTTP ${res.status}${quota}${auth}: ${text.slice(0, 200)}`)
+    const token = auth && gh.token && (res.status === 401 || (res.status === 403 && !quota)) ? ' (SIM_GITHUB_TOKEN geçersiz ya da bu repoya izni yok)' : ''
+    throw new GitHubError(res.status, `GitHub HTTP ${res.status}${quota}${token}, ${method} ${new URL(url).pathname}: ${text.slice(0, 200)}`)
   }
   return text
 }
 
 const path = (p: string) => p.split('/').map(encodeURIComponent).join('/')
 
-// Dalın ucu (commit sha).
+// Dalın ucu (commit sha). Token varsa REST API'den (kimlikli, dakikada bir okumaya kota yeter); yoksa git'in akıllı HTTP
+// ucundan, Authorization'sız (repo açık; git ucu API'nin Bearer token'ını kabul etmeyebilir).
 export async function branchHead(): Promise<string> {
-  const text = await call('GET', `${gh.gitUrl}/${gh.repo}.git/info/refs?service=git-upload-pack`, undefined, '*/*')
+  if (gh.token) {
+    let ref: { object?: { sha?: unknown } }
+    try {
+      ref = JSON.parse(await call('GET', `${gh.apiUrl}/repos/${gh.repo}/git/ref/heads/${path(gh.branch)}`))
+    } catch (err) {
+      if (err instanceof GitHubError && err.status === 404) throw new Error(`${gh.repo} reposunda ${gh.branch} dalı bulunamadı`)
+      throw err
+    }
+    const sha = ref?.object?.sha
+    if (typeof sha !== 'string' || !/^[0-9a-f]{40}$/.test(sha)) throw new Error('GitHub dal ucu beklenen biçimde değil')
+    return sha
+  }
+  const text = await call('GET', `${gh.gitUrl}/${gh.repo}.git/info/refs?service=git-upload-pack`, undefined, '*/*', false)
   const m = text.match(new RegExp(`([0-9a-f]{40}) refs/heads/${gh.branch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`))
   if (!m) throw new Error(`${gh.repo} reposunda ${gh.branch} dalı bulunamadı`)
   return m[1]!

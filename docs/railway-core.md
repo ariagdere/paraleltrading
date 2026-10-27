@@ -93,7 +93,7 @@ Başka değişken gerekmiyor; core yalnız simülasyon için GitHub'a bağlanır
   [core] simülasyon #1 yorumu alındı
   ```
 
-  Koşu birkaç saniyeden bir dakikaya kadar sürer (veri büyüdükçe uzar); arada core'un diğer işleri sürer. Sonuç dala beş dakika içinde yazılır; yorum, Claude'un görevi çalışıp dala koyduktan sonra beş dakika içinde gelir. Core ayın 1'i 04:00'te kapalıysa aylık koşuyu sonraki 7 gün içinde açılınca yapar. Koşu sürerken core yeniden başlarsa koşu `hata` olur ("core yeniden başladı"); sayfadan yeniden istenir.
+  Koşu birkaç saniyeden bir dakikaya kadar sürer (veri büyüdükçe uzar); arada core'un diğer işleri sürer. Sonuç koşu biter bitmez dala yazılır (yazılamazsa dakikada bir yeniden denenir); yorum, Claude'un görevi dala koyduktan sonra en geç bir dakika içinde gelir. Core ayın 1'i 04:00'te kapalıysa aylık koşuyu sonraki 7 gün içinde açılınca yapar. Koşu sürerken core yeniden başlarsa koşu `hata` olur ("core yeniden başladı"); sayfadan yeniden istenir.
 
 ## 5. Hesaplar
 
@@ -200,7 +200,7 @@ Naif setup'ı hangi değişken koşullarında daha iyi çalışıyor: her koşu 
 - **Şans testi:** işlem sonuçları karar anları arasında rastgele kaydırılıp (dairesel, %10–90 arası) aynı arama 200 kez tekrarlanır. En iyi kombinasyon tekrarların %95'lik değerini geçmiyorsa şansla açıklanabilir. Tohum koşu numarası: aynı veriyle aynı sonuç.
 - **Birleşik:** her yönün en iyisi ayrı yuvalarda; biri açıkken diğerinin sinyali gelirse o da açılır.
 - **Önceki bulgunun denetimi:** bir önceki aylık koşu (yoksa bir önceki koşu); her yönün en iyi 10'undan toplam R'si artıda olanlar, o koşunun verisi bittikten sonraki kararlarla. Tutuyor: en az 10 işlem, toplam R artıda ve işlem başına R aynı dönemin filtresiz tabanından aşağı değil; 10'dan az işlemde "veri az".
-- **sim-data dalı ve Claude'un yorumu:** core sonucu `runs/<id>.json` olarak yazar (`git_commit`; yazılamazsa `git_error`, beş dakikada bir yeniden dener). Claude'un "Hakari Simülasyon Yorumu" zamanlanmış görevi her gün 09:37'de yorumsuz koşuları okuyup `yorum/<id>.json` yazar (talimatlar dalın `ROUTINE.md`'sinde, API ücreti yok). Core dalın ucunu beş dakikada bir okur, yeni ya da değişen yorumu biçimini denetleyip `comment`'e alır; geçersizse almaz, Sağlık sayfasında hata görünür.
+- **sim-data dalı ve Claude'un yorumu:** core sonucu `runs/<id>.json` olarak yazar (`git_commit`; yazılamazsa `git_error`, dakikada bir yeniden dener). Claude'un "Hakari Simülasyon Yorumu" zamanlanmış görevi her gün 09:37'de yorumsuz koşuları okuyup `yorum/<id>.json` yazar (talimatlar dalın `ROUTINE.md`'sinde, API ücreti yok). Core dalın ucunu dakikada bir okur (token varsa REST API'den, yoksa git'in akıllı HTTP ucundan), uç değiştiyse yeni ya da değişen yorumu biçimini denetleyip `comment`'e alır; geçersizse almaz, Sağlık sayfasında hata görünür. Okuma hatasında (ağ, kota) bir sonraki dakika yeniden dener.
 - **Eşleşme:** 27 Ekim'deki Python prototipiyle (naif kombinasyon taraması) aday sayıları, değişkenler, en iyi 10'lar ve birleşik sonuç birebir aynı.
 
 ## 6. DBeaver'da kontrol
@@ -297,5 +297,5 @@ FROM collector_status WHERE source LIKE 'core:%' ORDER BY source;
 - `core:heatmap` satırında `last_source_time`, seviyesi hesaplanmış son snapshot'ın `received_at`'i.
 - `core:lsr` satırında `last_source_time`, açısı hesaplanmış son L/S noktası; collector'ın `lsr:*` satırlarıyla aynı olmalı (en çok bir dakika geride).
 - `core:naif` satırında `last_source_time`, kararı verilmiş son 12h döngüsü (heatmap'in son sütunu); saatte bir ilerler.
-- `core:sim` satırı son başarılı simülasyon koşusu (`last_source_time` verinin sonu); ayda bir. `core:sim-yorum` satırı `sim-data` dalıyla eşitleme; beş dakikada bir.
+- `core:sim` satırı son başarılı simülasyon koşusu (`last_source_time` verinin sonu); ayda bir. `core:sim-yorum` satırı `sim-data` dalıyla eşitleme; dakikada bir.
 - Hata görürsen `last_error` sebebi söyler; bir sonraki dakika yeniden dener.
