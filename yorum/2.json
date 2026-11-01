@@ -1,0 +1,21 @@
+{
+  "run_id": 2,
+  "generated_at": "2026-11-01T06:38:42Z",
+  "ozet": "İlk aylık koşuda (21 Eylül–1 Kasım, yaklaşık 41 gün) iki yönde de şanstan ayrışan bir kombinasyon yok. Long'un en iyisi +5,05 R ile şans testinin %95'lik değeri olan +9,33 R'nin, short'un en iyisi +9,41 R ile +13,27 R'nin altında kaldı. Dönem genelinde yine yön belirleyici: filtresiz short artıda (+4,83 R), filtresiz long ekside (−8,29 R).",
+  "gecerlilik": "Koşu #1'in kuralları 27 Ekim 21:45–1 Kasım 04:00 arasındaki yaklaşık 4 günde denetlendi; 20 kuraldan 19'unda veri az (10'dan az işlem), yalnız long #5 (L/S TT 5m aynı 0–15°) 10 işleme ulaştı ve tutmadı (−2,81 R, filtresiz taban −0,60 R). Bu aralıkta filtresiz taban iki yönde de ekside (long 10 işlemde −0,60 R, short 13 işlemde −0,90 R) ve artıda kalan tek kural 1 işlemlik short #6. Önceki short #1 5 işlemde −0,41 R, birleşik kural 7 işlemde −1,06 R verdi. Koşu #1'in bulguları zaten şansla açıklanabilir düzeydeydi; bu kısa aralık bir karar için yetersiz.",
+  "bulgular": [
+    "Short #1 (ZLEMA 1h nötr · Yakın/uzak oranı 0,4–0,7) koşu #1'deki yerini korudu ama 38 işlemde +9,41 R ile şans tekrarlarının yalnız %56'sından iyi; önceki +10,82 R'den geriledi.",
+    "Long tarafında önceki #1 (L/S global 1h aynı 0–15°) 42 işlemde +4,33 R ile #2'ye düştü; yeni #1 (L/S TT 5m ters 0–15° · Yakın/uzak oranı 0,4–0,7) 34 işlemde +5,05 R ve tekrarların %43'ünden iyi.",
+    "En iyi long ve short birlikte 72 işlemde +14,46 R verdi; şans ortancası +13,86 R ile neredeyse aynı, %95'lik değer +20,90 R'nin belirgin altında.",
+    "Short'un en iyi 10 kuralının 5'inde Yakın/uzak oranı, 4'ünde ZLEMA 1h nötr koşulu var; koşu #1'de de Yakın/uzak oranı 4 kuralda geçiyordu.",
+    "Ekim ayının filtresiz toplamı 145 işlemde −5,71 R'ye indi (koşu #1'de 121 işlemde −3,32 R); son günlerde iki yön de zayıfladı."
+  ],
+  "oneriler": [
+    "Koşu #1 kurallarının denetimi için bir sonraki aylık koşuyu bekle; bu aralıkta yalnız 4 gün ve kural başına 0–10 işlem var.",
+    "Short #1 kuralını izlemeye devam et; iki koşuda da en üstte kalan tek kural bu.",
+    "Yakın/uzak oranı 0,4–0,7 ve 0,7–1 koşullarını short için ayrı ayrı test et; iki koşuda da en iyi short kurallarında tekrar ediyor."
+  ],
+  "guven": "Düşük",
+  "model": "claude-opus-5-5",
+  "prompt_version": "v1"
+}
