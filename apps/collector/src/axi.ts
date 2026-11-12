@@ -136,6 +136,10 @@ function state(tf: Timeframe): TfState {
 // kapalı kaldıysa) eski uçtan pencere pencere ilerler: bir pencere hata verirse kayıtlı seri yine kesintisiz kalır
 // ve sonraki tur kaldığı yerden sürer. (En yeni sayfadan geriye inseydik, yarıda kalan bir doldurma son mumların
 // arkasında kalıcı bir delik bırakırdı.)
+// İsteği hata veren dilim, başarılı olana kadar her dakika yeniden istenir. Yoksa kapanıştan bir dakika sonraki
+// düzeltme isteği düşen 1h/4h/1d bir sonraki kapanışa kadar (saatlerce) istenmez, Sağlık'ta uyarı da o kadar kalırdı.
+const retry = new Set<Timeframe>()
+
 export async function syncAxi(pool: Pool) {
   for (const tf of TIMEFRAMES) {
     const step = STEP_MS[tf]
@@ -145,7 +149,7 @@ export async function syncAxi(pool: Pool) {
     try {
       const now = Date.now()
       let { last } = await bounds(pool, tf)
-      const due = last === null || last + 2 * step <= now || now - (last + step) < RECHECK_MS
+      const due = last === null || last + 2 * step <= now || now - (last + step) < RECHECK_MS || retry.has(tf)
       if (!due) continue
       let written = 0
       if (last === null) {
@@ -167,8 +171,10 @@ export async function syncAxi(pool: Pool) {
       }
       if (written > 1) console.log(`[axi] ${tf}: ${written} mum yazıldı`)
       ;({ last } = await bounds(pool, tf))
+      retry.delete(tf)
       await markOk(pool, source, EXPECTED_EVERY[tf], last === null ? null : new Date(last))
     } catch (err) {
+      retry.add(tf)
       if (windowed) state(tf).limit = Math.max(MIN_PAGE, Math.floor(state(tf).limit / 2))
       const msg = errText(err)
       console.error(`[axi] ${tf}: ${msg}`)
