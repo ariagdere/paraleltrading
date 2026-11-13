@@ -7,7 +7,8 @@ import { DEFAULTS, SR_VERSION, run, weekly, type Candle, type Params, type Zone 
 // biriktiği için her seferinde baştan yapılır (altı aylık 4h serisinde bir saniyenin altında). Yazım tek
 // işlemde: okuyan hiçbir zaman yarım bir geçmiş görmez.
 
-// Axi günleri İstanbul 00:00'da (21:00 UTC) açılır; haftalık mum pazartesi 00:00 İstanbul'dan.
+// Axi günleri sunucu saatinin 00:00'ında açılır (yazın İstanbul 00:00, kışın 01:00); haftalık mum pazartesi
+// 00:00 İstanbul'dan (iki durumda da pazartesinin günlük mumu o haftaya düşer).
 const WEEK_OFFSET_MS = 3 * 3_600_000
 
 // Süreç içinde son işlenen serilerin izi (dilim başına mum sayısı, son mum, son düzeltme); değişmediyse tur tek sorgu.

@@ -5,10 +5,11 @@ import { SYMBOL } from './sync.js'
 
 // Heatmap seviyeleri: seviyesi hesaplanmamış her snapshot için cluster'lar, bant likiditesi ve baz (heatmap_levels).
 // Snapshot değişmediği için bir kez hesaplanır. Yalnız baz o anki Axi 1m mumuna bağlı: mum o an yoksa (henüz
-// gelmemiş ya da boşluk denetimiyle sonradan gelecek) son bir gündeki satırlarda baz her dakika yeniden aranır.
+// gelmemiş, boşluk denetimiyle sonradan gelecek ya da collector'ın saat onarımıyla yeniden çekilecek) son 30 gündeki
+// satırlarda baz her dakika yeniden aranır.
 
 const BATCH = 50
-const BASIS_RETRY = '1 day'
+const BASIS_RETRY = '30 days'
 
 // Snapshot'ın anına (update_time, yoksa received_at) kadar kapanmış son Axi 1m mumu; son 5 dakikada yoksa yok.
 const AXI_AT = `(SELECT c.close FROM axi_candles c
@@ -71,7 +72,7 @@ export async function syncHeatmapLevels(pool: Pool) {
       }
     }
 
-    // Bazı eksik kalan son bir günün satırları: Axi mumu sonradan geldiyse doldur.
+    // Bazı eksik kalan son 30 günün satırları: Axi mumu sonradan geldiyse doldur.
     const filled = await pool.query(
       `UPDATE heatmap_levels l SET axi_price = a.close, basis = l.ref_price - a.close, computed_at = now()
        FROM heatmap_snapshots s, LATERAL (SELECT ${AXI_AT} AS close) a

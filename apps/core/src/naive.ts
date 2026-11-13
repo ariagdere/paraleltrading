@@ -3,12 +3,13 @@
 //     cluster'a mesafenin %75'i, SL uzak cluster'a mesafenin %75'i. Cluster'lar iki ondalığa yuvarlı (eski
 //     computeClusters öyle veriyordu), referans yuvarlanmadan; çıktılar iki ondalık.
 //   - ZLEMA 4h bölgesi (computeZlemaZone): son 150 mum, oluşan mum dahil. Eski sistem Binance vadeli 4h'yi
-//     kullanıyordu; burada Axi 4h (İstanbul'a hizalı), oluşan mum karar anına kadar kapanmış 1m mumlarından.
+//     kullanıyordu; burada Axi 4h (Axi sunucu saatine hizalı), oluşan mum karar anına kadar kapanmış 1m mumlarından.
 //   - pencere: eski sistemin o tarihteki kuralı (9 Ekim'e kadar hafta içi, sonra pazartesi 00:00 – cuma 15:05).
 //   - yön ZLEMA bölgesiyle aynıysa ve döngü penceredeyse eski sistem emir gönderirdi: sinyal.
 // İşlem benzetimi Axi 1m mumlarıyla: mumlar bid; BUY ask'tan (bid + spread) girer, bid'le çıkar; SELL bid'den girer,
 // ask'la çıkar. TP/SL eski sistemin gönderdiği gibi heatmap fiyatıyla (bazla kaydırılmadan).
 
+import { axiOpen } from '@pt/db/axitime'
 import { zlemaZone, type Zone } from './indicators.js'
 
 export const NAIVE_VERSION = 'v1'
@@ -88,8 +89,8 @@ export function lastAtOrBefore(bars: { t: number }[], t: number): number {
   return ans
 }
 
-// Axi 4h aralığının başı (İstanbul'a hizalı: 00, 04, 08 …).
-export const h4Open = (t: number) => Math.floor((t + IST) / H4) * H4 - IST
+// Axi 4h aralığının başı (Axi sunucu saatinin 00, 04, 08 …'i: yazın İstanbul'la aynı, kışın bir saat sonra).
+export const h4Open = (t: number) => axiOpen(t, H4)
 
 // Karar anındaki 4h bölgesi: oluşan aralıktan önceki son 149 kapanmış mum ve oluşan mum (o ana kadar kapanmış 1m
 // mumlarından; hiç yoksa son fiyatla tek değerli mum). Geçmiş yetmezse null.

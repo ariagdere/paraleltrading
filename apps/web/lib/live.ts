@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { axiToUtc } from '@pt/db/axitime'
 import { SYMBOL } from './market-data'
 
 // Canlı Axi fiyatı: MetaApi'ye tek, uzun ömürlü streaming bağlantısı, yalnız BTCUSD quote'ları. Bütün tarayıcılar
@@ -49,14 +50,23 @@ export function liveStatus(): LiveStatus {
 
 const isNum = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x)
 
+// Quote anı. MetaApi'nin UTC zamanı (time) Axi kış saatindeyken bir saat erken (bkz. @pt/db/axitime): an sunucu
+// saatinden (brokerTime) hesaplanır; kışa dönüşte iki kez yaşanan saatte geliş anına yakın yorum. Okunamazsa time.
+function quoteTime(time: unknown, brokerTime: unknown): number {
+  const t = new Date(time as string | Date).getTime()
+  const local = typeof brokerTime === 'string' ? Date.parse(`${brokerTime.replace(' ', 'T')}Z`) : NaN
+  if (Number.isFinite(local) && (!Number.isFinite(t) || Math.abs(local - t) <= 12 * 3_600_000)) return axiToUtc(local, Date.now())
+  return t
+}
+
 // SDK her olayı dinleyicinin bütün yöntemlerinde arar; olmayanlar sessizce geçilir. 'then' yok: nesne thenable
 // sanılmasın.
 function listener(s: Live) {
   const handlers: Record<string, (...args: unknown[]) => Promise<void>> = {
     async onSymbolPriceUpdated(_i: unknown, price: unknown) {
-      const p = price as { symbol?: string; bid?: unknown; ask?: unknown; time?: unknown } | null
+      const p = price as { symbol?: string; bid?: unknown; ask?: unknown; time?: unknown; brokerTime?: unknown } | null
       if (!p || p.symbol !== SYMBOL || !isNum(p.bid) || !isNum(p.ask)) return
-      const t = new Date(p.time as string | Date).getTime()
+      const t = quoteTime(p.time, p.brokerTime)
       if (!Number.isFinite(t)) return
       const last = s.last
       // Yüksek güvenilirlikte iki kopya aynı quote'u gönderebilir: eskiyi ve kopyayı at.
