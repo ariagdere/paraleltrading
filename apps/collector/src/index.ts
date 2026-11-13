@@ -4,6 +4,7 @@
 // 15 dakikada bir yeniden) ve günlük bias raporları (5 dakikada bir bias-data dalına bakar).
 import { createPool, every, markFail, migrate, type Job, type Pool } from '@pt/db'
 import { auditAxiGaps, backfillAxi, EXPECTED_EVERY, syncAxi, syncSpec, TIMEFRAMES } from './axi.js'
+import { repairAxiShift } from './axi-repair.js'
 import { syncBias } from './bias.js'
 import { config } from './config.js'
 import { heatmapHour, SPANS } from './heatmap.js'
@@ -40,6 +41,8 @@ while (!(await lock.query<{ ok: boolean }>('SELECT pg_try_advisory_lock($1) AS o
   waited = true
   await new Promise((r) => setTimeout(r, 10_000))
 }
+// Tek seferlik Axi saat onarımı: kilitten sonra (eski süreç kayık mum yazmayı bırakmış olsun), Axi işlerinden önce.
+if (config.metaapi.token && config.metaapi.accountId) await repairAxiShift(pool).catch(fatal)
 console.log('[collector] başladı')
 
 const jobs: Job[] = []

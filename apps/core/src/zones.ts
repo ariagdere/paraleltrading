@@ -125,7 +125,7 @@ export function atrSeries(c: Candle[], len = 14): Array<number | null> {
 }
 
 // Günlük mumlardan haftalık (pazartesi başlangıçlı). offsetMs: haftanın başlangıcının UTC'den farkı
-// (Binance UTC: 0; Axi İstanbul: günler 21:00 UTC'de açılır, 3 sa).
+// (Binance UTC: 0; Axi: hafta pazartesi 00:00 İstanbul'dan, 3 sa; günler yazın 21:00, kışın 22:00 UTC'de açılır).
 export function weekly(daily: Candle[], offsetMs: number): Candle[] {
   const out: Candle[] = []
   const MON = 4 * DAY

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { logRun, markFail, markOk, type Pool } from '@pt/db'
+import { axiOffsetMs, axiToUtc, logRun, markFail, markOk, type Pool } from '@pt/db'
 import { config } from './config.js'
 
 // Axi BTCUSD mumları (MetaApi geçmiş API'si): 1m, 5m, 15m, 1h, 4h, 1d, Axi'nin kendi sınırlarıyla.
@@ -13,6 +13,9 @@ import { config } from './config.js'
 //     satırında; canlı dilimlerin sağlığını etkilemez.
 // MetaApi'de hesap başına aynı anda en çok 5 geçmiş isteği var ve eski dashboard en çok 3 kullanıyor;
 // bu iki iş en çok 2 eşzamanlı istek yapar.
+// Zamanlar: MetaApi'nin UTC zamanı (time) Axi'nin sunucu saatinden sabit 3 saat çıkarılarak hesaplanıyor; Axi kışın
+// UTC+2 olduğu için o dönemde bir saat erken. Mumun gerçek açılışı sunucu saatinden (brokerTime) hesaplanır
+// (@pt/db/axitime); geçmiş isteklerinin başlangıcı (startTime) da MetaApi'nin saydığı farkla gönderilir.
 
 export const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'] as const
 export type Timeframe = (typeof TIMEFRAMES)[number]
@@ -54,24 +57,53 @@ const errText = (err: unknown) =>
   (err as Error).name === 'TimeoutError' ? 'MetaApi zamanında yanıt vermedi' : (err as Error).message
 const iso = (t: number) => new Date(t).toISOString()
 const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : null)
+const H = 3_600_000
 
+// MetaApi'nin Axi sunucu saati için kullandığı fark (brokerTime − time; şimdilik hep 3 saat). Yanıtlardan güncellenir.
+let metaOffset = 3 * H
+let metaOffsetSeen = false
+
+// "2026-11-13 15:09:00.000" → aynı duvar saati UTC gibi (ms); okunamazsa NaN.
+const brokerMs = (x: unknown) => (typeof x === 'string' ? Date.parse(`${x.replace(' ', 'T')}Z`) : NaN)
+
+// Mumun gerçek açılışı sunucu saatinden; brokerTime yoksa ya da tutarsızsa sunucu saati time + MetaApi'nin farkı
+// sayılır.
 function parse(raw: unknown): Candle[] {
   if (!Array.isArray(raw)) throw new Error('MetaApi mum yanıtı beklenen biçimde değil')
   const out: Candle[] = []
+  let newest = -Infinity
+  let offset: number | null = null
   for (const r of raw as Array<Record<string, unknown> | null>) {
-    const t = Date.parse(String(r?.time))
+    const time = Date.parse(String(r?.time))
     const [o, h, l, c] = [num(r?.open), num(r?.high), num(r?.low), num(r?.close)]
-    if (!Number.isFinite(t) || o === null || h === null || l === null || c === null) continue
+    if (!Number.isFinite(time) || o === null || h === null || l === null || c === null) continue
+    let local = brokerMs(r?.brokerTime)
+    if (Number.isFinite(local) && Math.abs(local - time) <= 12 * H) {
+      if (time > newest) ((newest = time), (offset = local - time))
+    } else local = time + metaOffset
     const s = num(r?.spread)
-    out.push({ t, o, h, l, c, v: num(r?.tickVolume), s: s === null ? null : Math.round(s) })
+    out.push({ t: axiToUtc(local), o, h, l, c, v: num(r?.tickVolume), s: s === null ? null : Math.round(s) })
+  }
+  if (offset !== null && (offset !== metaOffset || !metaOffsetSeen)) {
+    const real = axiOffsetMs(Date.now())
+    const diff = (real - offset) / H // MetaApi zamanı − gerçek zaman (saat)
+    console.log(
+      `[axi] MetaApi Axi sunucu saatini UTC+${offset / H} sayıyor, Axi şu an UTC+${real / H}` +
+        (diff === 0 ? '' : `: MetaApi zamanları ${Math.abs(diff)} saat ${diff < 0 ? 'erken' : 'geç'}, mumlar sunucu saatinden yazılıyor`),
+    )
+    metaOffset = offset
+    metaOffsetSeen = true
   }
   return out
 }
 
+// Gerçek bir an, MetaApi'nin zamanıyla (startTime için): sunucu saatine çevrilip MetaApi'nin farkı çıkarılır.
+const toMeta = (t: number) => t + axiOffsetMs(t) - metaOffset
+
 // beforeMs yoksa en yeni mumlar (oluşan dahil); varsa o andan önceki mumlar (MetaApi geriye doğru yükler).
 async function fetchPage(tf: Timeframe, limit: number, beforeMs: number | null): Promise<Candle[]> {
   const { marketDataUrl, accountId, symbol } = config.metaapi
-  const since = beforeMs === null ? '' : `&startTime=${encodeURIComponent(iso(beforeMs))}`
+  const since = beforeMs === null ? '' : `&startTime=${encodeURIComponent(iso(toMeta(beforeMs)))}`
   const url =
     `${marketDataUrl}/users/current/accounts/${accountId}/historical-market-data/symbols/${symbol}` +
     `/timeframes/${tf}/candles?limit=${limit}${since}`
@@ -165,8 +197,11 @@ export async function syncAxi(pool: Pool) {
           }
           windowed = true
           const windowEnd = from + limit * step // (from, windowEnd] aralığındaki mumlar
-          written += await saveClosed(pool, tf, await fetchPage(tf, limit, windowEnd + 1))
-          from = windowEnd
+          const page = await fetchPage(tf, limit, windowEnd + 1)
+          written += await saveClosed(pool, tf, page)
+          // Sayfanın gerçekten geldiği yere kadar ilerlenir: MetaApi istek saatini farklı yorumlasa da delik kalmaz.
+          const newest = page.reduce((m, c) => Math.max(m, c.t), -Infinity)
+          from = newest > from ? Math.min(windowEnd, newest) : windowEnd
         }
       }
       if (written > 1) console.log(`[axi] ${tf}: ${written} mum yazıldı`)

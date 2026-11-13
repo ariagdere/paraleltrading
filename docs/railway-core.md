@@ -105,6 +105,7 @@ Başka değişken gerekmiyor; core yalnız simülasyon için GitHub'a bağlanır
 
 - Eski sistem her hesapta son 150 mumu kullanıyordu. Kalman'ın başlangıç değeri yüzünden sonuç pencereye bağlı, bu yüzden her mumun ZLEMA'sı o muma kadarki son 150 mumla hesaplanıyor. Aynı 150 mumla eski kod ve core birebir aynı sonucu veriyor.
 - Değer mum kapanınca bilinir. 4h mumu İstanbul 16:00'da açıldıysa değeri 20:00'de kesinleşir.
+- Axi 4h ve 1d mumları Axi'nin sunucu saatine (New York + 7) hizalı: yazın İstanbul 00, 04, 08 …, kışın (1 Kasım 2026 – 14 Mart 2027 gibi) İstanbul 01, 05, 09 …; günlük mum yazın 00:00'da, kışın 01:00'de açılır. Oluşan 4h/1d mumunu kuran yerler (naif karar, simülasyon, web grafiği) aynı hizayı kullanır (`@pt/db/axitime`). MetaApi bu hizayı kışın bir saat erken etiketliyordu; collector Kasım 2026'dan beri sunucu saatinden düzeltiyor (bkz. collector dokümanı, Axi saatleri). 1d geçmişindeki önceki kışların (Mart 2026 ve öncesi) günlük mumları bir saat erken etiketli kaldı (21:00 UTC); değerleri ve haftalık gruplanmaları doğru.
 - Eski sistem 4h bölgesini Binance mumlarıyla ve oluşan (henüz kapanmamış) mumu da katarak hesaplıyordu. Oluşan mumlu değer saklanmaz; geriye dönük simülasyon aynı fonksiyonla 1m mumlardan hesaplayacak.
 - İlk 149 mumda ZLEMA, ilk 14 mumda RSI, ilk 13 mumda ATR boş. Collector her dilimde 18 Eylül'den 1000 mum öncesine kadar indiği için 18 Eylül'den itibaren hepsi dolu.
 
@@ -150,7 +151,7 @@ Her snapshot için bir satır; değer snapshot'ın `received_at` anında bilinir
 
 - Eski sistem cluster değerlerini iki ondalığa yuvarlayıp kullanıyordu; burada yuvarlanmadan saklanıyor.
 - 2. ve 3. cluster tepe seviyesine göre sıralı. Çok seviyeli bir kümenin toplamı tek büyük seviyeden oluşan 1. cluster'ınkini geçebilir.
-- Axi 1m mumu o an yoksa (MetaApi geç verdiyse) `axi_price` ve `basis` boş kalır; son bir günün satırlarında mum gelince doldurulur. Axi 1m serisi 17 Eylül'de başladığı için eski sistemden kopyalanan daha eski 12h'lerde baz yok.
+- Axi 1m mumu o an yoksa (MetaApi geç verdiyse ya da collector mumları yeniden çekiyorsa) `axi_price` ve `basis` boş kalır; son 30 günün satırlarında mum gelince doldurulur. Axi 1m serisi 17 Eylül'de başladığı için eski sistemden kopyalanan daha eski 12h'lerde baz yok.
 
 ### L/S açıları (`lsr_angles`)
 

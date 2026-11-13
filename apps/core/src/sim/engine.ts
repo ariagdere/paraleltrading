@@ -9,9 +9,9 @@
 // açılışında (en çok 10 dk sonra); BUY ask'tan (bid + mumun spread'i), SELL bid'den. Çıkış 1m mumlarıyla; mum seviyenin
 // ötesinde açılırsa açılıştan, aynı mumda TP ve SL olursa SL.
 //
-// Değişkenler işlem yönüne göre: ZLEMA (oluşan mumla; 4h ve 1d İstanbul'a hizalı) aynı/ters/nötr; L/S açısı (global
-// ve TT; yayımlanmış son nokta, ts ≤ T − dilim, iki dilimden eski değil) aynı/ters × 0–15°, 15–30°, 30°+; yakın/uzak
-// cluster mesafesi oranı 0–0,4, 0,4–0,7, 0,7–1.
+// Değişkenler işlem yönüne göre: ZLEMA (oluşan mumla; 4h ve 1d Axi sunucu saatine hizalı) aynı/ters/nötr; L/S açısı
+// (global ve TT; yayımlanmış son nokta, ts ≤ T − dilim, iki dilimden eski değil) aynı/ters × 0–15°, 15–30°, 30°+;
+// yakın/uzak cluster mesafesi oranı 0–0,4, 0,4–0,7, 0,7–1.
 //
 // Arama long ve short için ayrı: aynı anda tek pozisyon, 1 ve 2 koşullu bütün kombinasyonlar, 3 ve 4 koşullular en
 // iyi 20'nin üstüne birer koşul ekleyerek; en az 30 işlemliler toplam R'ye göre sıralı. Şans testi: işlem sonuçları
@@ -19,6 +19,7 @@
 // ve en iyi short ayrı yuvalarda (biri açıkken diğerinin sinyali de açılır). Geçerlilik: önceki koşunun seçtiği
 // kurallar, önceki koşunun verisinin bittiği andan sonraki kararlarla.
 
+import { axiOpen } from '@pt/db/axitime'
 import { zlemaZone, type Zone } from '../indicators.js'
 
 export const SIM_ENGINE = 'v1'
@@ -117,10 +118,7 @@ export type Candidates = {
   to: number
 }
 
-const bucketStart = (tf: ZTf, T: number) => {
-  const step = ZTF[tf]
-  return tf === '4h' || tf === '1d' ? Math.floor((T + IST) / step) * step - IST : Math.floor(T / step) * step
-}
+const bucketStart = (tf: ZTf, T: number) => axiOpen(T, ZTF[tf])
 
 // T anındaki ZLEMA bölgesi, oluşan mumla: oluşan aralıktan önceki son 149 kapanmış mum ve o ana kadar kapanmış 1m
 // mumlarından oluşan mum (hiç yoksa son fiyatla tek değerli mum). Geçmiş yetmezse null.

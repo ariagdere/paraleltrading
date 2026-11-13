@@ -1,3 +1,4 @@
+import { axiOpen, axiToUtc } from '@pt/db/axitime'
 import { MAX_CANDLES, TF_MS, type CandleRow, type ChartTf, type ChartTokens, type PrevLevels, type Zones } from './chart-shared'
 import { db } from './db'
 import { SYMBOL } from './market-data'
@@ -32,25 +33,33 @@ export async function loadCandles(tf: ChartTf, opt: { before?: number; after?: n
 }
 
 // Dilimin oluşan mumları: kayıtlı son mumdan sonraki aralıklar, kapanmış 1m mumlarından (en çok önceki ve şimdiki
-// aralık; collector bir dilimin mumunu kapanıştan birkaç saniye sonra yazar). Axi 4h ve 1d mumları İstanbul'a hizalı:
-// aralık başı floor((t + 3 sa) / dilim) · dilim − 3 sa (5m–1h'te UTC ile aynı). Canlı quote'lar tarayıcıda bunun
-// üstüne işlenir.
+// aralık; collector bir dilimin mumunu kapanıştan birkaç saniye sonra yazar). 4h ve 1d aralıkları Axi sunucu saatine
+// hizalı (@pt/db/axitime): 1m mumları sunucu saatindeki aralığa göre toplanır, aralık başı gerçek UTC'ye çevrilir.
+// Kayıtlı son mumdan bir dilim sonrasının bir saat öncesinden okunur: geçiş günlerindeki 23 saatlik gün ve 3 saatlik
+// 4h mumundan sonraki aralık da tam gelsin. Canlı quote'lar tarayıcıda bunun üstüne işlenir.
+const H = 3_600_000
+const AXI_OFF = `(extract(epoch FROM (c.open_time AT TIME ZONE 'America/New_York')) - extract(epoch FROM c.open_time) + 25200)`
+
 export async function loadForming(tf: ChartTf): Promise<CandleRow[]> {
-  const { rows } = await db().query<{ t: string; o: number; h: number; l: number; c: number }>(
-    `WITH b AS (
-       SELECT greatest(
-         coalesce((SELECT max(open_time) FROM axi_candles WHERE symbol = $1 AND timeframe = $2) + make_interval(secs => $3), '-infinity'),
-         to_timestamp(floor((extract(epoch FROM now()) + 10800) / $3) * $3 - 10800 - $3)
-       ) AS start
-     )
-     SELECT ((floor((extract(epoch FROM open_time) + 10800) / $3) * $3 - 10800) * 1000)::bigint::text AS t,
-            (array_agg(open ORDER BY open_time))[1] AS o, max(high) AS h, min(low) AS l, (array_agg(close ORDER BY open_time DESC))[1] AS c
-     FROM axi_candles, b
-     WHERE symbol = $1 AND timeframe = '1m' AND open_time >= b.start
+  const step = TF_MS[tf]
+  const prev = axiOpen(axiOpen(Date.now(), step) - 1, step)
+  const { rows } = await db().query<{ lb: string; o: number; h: number; l: number; c: number; last: string | null }>(
+    `WITH m AS (SELECT max(open_time) AS last FROM axi_candles WHERE symbol = $1 AND timeframe = $2)
+     SELECT (floor((extract(epoch FROM c.open_time) + ${step > H ? AXI_OFF : '0'}) / $3) * $3 * 1000)::bigint::text AS lb,
+            (array_agg(c.open ORDER BY c.open_time))[1] AS o, max(c.high) AS h, min(c.low) AS l,
+            (array_agg(c.close ORDER BY c.open_time DESC))[1] AS c, (extract(epoch FROM min(m.last)) * 1000)::bigint::text AS last
+     FROM axi_candles c, m
+     WHERE c.symbol = $1 AND c.timeframe = '1m' AND c.open_time >= $4
+       AND c.open_time >= coalesce(m.last + make_interval(secs => $3) - interval '1 hour', '-infinity')
      GROUP BY 1 ORDER BY 1`,
-    [SYMBOL, tf, TF_MS[tf] / 1000],
+    [SYMBOL, tf, step / 1000, new Date(prev)],
   )
-  return rows.map((r): CandleRow => [Number(r.t), r.o, r.h, r.l, r.c])
+  const out: CandleRow[] = []
+  for (const r of rows) {
+    const t = step > H ? axiToUtc(Number(r.lb)) : Number(r.lb)
+    if (r.last === null || t > Number(r.last)) out.push([t, r.o, r.h, r.l, r.c])
+  }
+  return out
 }
 
 // Son sürümün geçerli bölgeleri (on beş kadar), hangilerinin gösterileceğiyle. Tablo ya da sütun yoksa (core yeni
@@ -107,7 +116,8 @@ export async function loadZones(): Promise<Zones> {
 const DAY = 86_400_000
 const IST = 3 * 3_600_000
 
-// Önceki gün ve önceki haftanın seviyeleri Axi günlük mumlarından. Günlük mumlar İstanbul 00:00'da açılır.
+// Önceki gün ve önceki haftanın seviyeleri Axi günlük mumlarından. Günlük mumlar Axi sunucu saatinin 00:00'ında açılır
+// (yazın İstanbul 00:00, kışın 01:00); ikisi de aynı İstanbul gününde, hafta pazartesi 00:00 İstanbul'dan sayılır.
 export async function loadPrevLevels(now: Date): Promise<PrevLevels> {
   const { rows } = await db().query<{ t: string; o: number; h: number; l: number; c: number }>(
     `SELECT (extract(epoch FROM open_time) * 1000)::bigint::text AS t, open AS o, high AS h, low AS l, close AS c

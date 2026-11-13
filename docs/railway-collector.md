@@ -80,6 +80,10 @@ Her deneme `collector_runs`'ta ayrı satırdır (`detail.attempt`), başlatılan
 
 **Axi mumları.** Her dakika her dilim son kayıtlı mumdan bugüne istenir (son kayıtlı mum da yeniden, geç gelen tik düzeltmesi için); bir dakikanın isteği düşerse kaçan mumlar sonraki başarılı istekte gelir. İsteği hata veren dilim başarılı olana kadar her dakika yeniden istenir: kapanıştan bir dakika sonraki düzeltme isteği düşen 1h/4h/1d bir sonraki kapanışı beklemez, Sağlık'taki uyarı da ilk başarılı istekte kalkar. Boşluk denetimi 30 dakikada bir (xx:20 ve xx:50) her dilimin son 6 saatinde iki kayıtlı mum arasında eksik var mı diye bakar ve eksikleri MetaApi'den yeniden ister; boşluk başına tek istek. Geriye doldurma sürerken çalışmaz: MetaApi'nin eşzamanlı istek sınırı eski dashboard'la ortak. Axi'nin kendi kısa araları (1m'de günde 4 dakika kadar, 5m'de ayda birkaç mum) hiç gelmez; bunlar gerçek boşluk, hata sayılmaz ve 6 saat sonra istenmez olur.
 
+**Axi saatleri.** Axi'nin sunucu saati New York + 7 saat: ABD yaz saatinde UTC+3, kışın UTC+2 (geçiş ABD'yle aynı gün; 1 Kasım 2026, 14 Mart 2027). 4h mumları bu saatin 00, 04, 08 …'inde, 1d mumları 00:00'ında açılır: yazın İstanbul 00, 04, 08 …, kışın İstanbul 01, 05, 09 … MetaApi mumların UTC zamanını (`time`) bu hesap için sabit +3 saatle hesaplıyor, kışın bir saat erken veriyor. collector mumun açılışını sunucu saatinden (`brokerTime`) hesaplar; geçmiş isteklerinin başlangıcını da MetaApi'nin saydığı farkla gönderir (fark her yanıttan yeniden okunur, MetaApi düzeltirse kendiliğinden uyar). Kışa dönüş gecesi sunucu saatinin iki kez yaşadığı saat (1 Kasım 2026 08:00–09:00, İstanbul 08:00–10:00) tek mum serisidir; kış saatine yazılır, ondan önceki gerçek saat boş kalır.
+
+**Tek seferlik saat onarımı (Kasım 2026).** Düzeltmeden önce 1 Kasım'dan beri mumlar bir saat erken etiketle yazılmıştı. Yeni sürüm ilk açılışta, kilidi aldıktan sonra, 1 Kasım 00:00'dan (İstanbul) beri yazılan Axi mumlarını ve göstergelerini siler, o andan sonraki heatmap bazlarını boşaltır (`collector_runs`'ta `axi:onarim-2026-11`; varsa bir daha çalışmaz). Canlı tur mumları birkaç dakikada doğru saatle yeniden çeker; core göstergeleri, bazları, bölgeleri ve naif kararları kendiliğinden yeniden hesaplar.
+
 **Sembol bilgisi.** Açılışta ve 6 saatte bir okunur; okunamazsa 6 saat beklenmez, 15 dakikada bir yeniden denenir.
 
 ### Eski DB'den kopya
@@ -120,6 +124,8 @@ Deploy loglarında sırayla:
 - Bias: ilk açılışta `bias-data` dalındaki bütün raporlar yazılır (`[bias] 2026-10-15T1419.json: SHORT MEDIUM, skor -45` gibi). Sonra dal 5 dakikada bir kontrol edilir; yeni rapor gelince aynı satır düşer.
 - Heatmap ilk kez bir sonraki saat başından 30 saniye sonra çalışır; üç çalıştırma 5 dakika içinde biter. Biri tutmazsa `[heatmap] 48h: Apify çalıştırması FAILED (deneme 1; 30 sn sonra tekrar denenecek)`, tekrar tutunca `[heatmap] 48h: 2. deneme başarılı` yazar.
 - Mum boşluğu dolunca: `[axi] 1m: 2026-10-15T19:41:00.000Z sonrasındaki boşluğa 1/1 mum geldi` (saat UTC). Boşluk yoksa satır düşmez.
+- İlk MetaApi yanıtında saat farkı: kışın `[axi] MetaApi Axi sunucu saatini UTC+3 sayıyor, Axi şu an UTC+2: MetaApi zamanları 1 saat erken, mumlar sunucu saatinden yazılıyor`. MetaApi düzeltirse `... UTC+2 sayıyor, Axi şu an UTC+2` satırı düşer; bir şey yapmak gerekmez.
+- Saat onarımı (yalnız bir kez): `[axi] saat onarımı: 2026-10-31T21:00:00.000Z sonrasındaki ... mum (...), ... gösterge satırı silindi, ... heatmap bazı boşaltıldı`; ardından 1m ve 5m için pencere pencere `[axi] 1m: ... mum yazıldı` satırları.
 - Eski DB kopyası (`OLD_DATABASE_URL` verildiyse): ilk açılışta `uygulandı: 002_eski_sistem.sql`, sonra `[eski] kopyalandı: orders ..., orderEvents ..., calendar ..., heatmap12h ..., lsr5m ...`. Sonraki saatlerde yalnız yeni ya da değişen satırlar gelir; bir şey değişmediyse satır düşmez.
 
 Deploy sırasında eski süreç kapanana kadar yenisi `başka bir collector çalışıyor; kilit bekleniyor` yazar; bu normal, aynı saat iki kez heatmap başlatılmasın diye.
@@ -156,6 +162,15 @@ ORDER BY id DESC;
 SELECT started_at, detail->>'tf' AS dilim, detail->>'gapStart' AS bosluk_oncesi, rows_written AS gelen, detail->>'missing' AS eksik
 FROM collector_runs WHERE source = 'axi:gaps' AND ok ORDER BY id DESC LIMIT 20;
 
+-- Axi saatleri: 1m mumu kapanışından birkaç saniye sonra gelmeli (60–70 sn; bir saat kaymada 3600 civarı)
+SELECT date_trunc('day', open_time) AS gun, percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM received_at - open_time)) AS medyan_sn
+FROM axi_candles WHERE timeframe = '1m' AND open_time > now() - interval '3 days' GROUP BY 1 ORDER BY 1;
+-- 4h ve 1d açılış saatleri (İstanbul): kışın 01, 05, 09 …, yazın 00, 04, 08 …
+SELECT timeframe, to_char(open_time AT TIME ZONE 'Europe/Istanbul', 'HH24:MI') AS acilis, count(*)
+FROM axi_candles WHERE timeframe IN ('4h', '1d') AND open_time > now() - interval '7 days' GROUP BY 1, 2 ORDER BY 1, 2;
+-- saat onarımı
+SELECT started_at, rows_written, detail FROM collector_runs WHERE source = 'axi:onarim-2026-11';
+
 -- son bias raporları
 SELECT source_file, committed_at, bias, confidence, sentiment_score, risk_regime
 FROM daily_bias ORDER BY committed_at DESC LIMIT 5;
@@ -174,4 +189,4 @@ SELECT source, count(*), min(received_at), max(received_at) FROM heatmap_snapsho
 - `bias` satırında `last_source_time` son raporun dala düştüğü an (simülasyonda bias'ın bilindiği an). Hata varsa `last_error` dosya adını ve sebebi söyler: çekirdek alanı (bias, güven, yön, skor, tarih) geçersiz bir rapor yazılmaz; düzeltilip dala yeniden gönderilince yazılır.
 - `legacy` eski DB kopyasının satırı (yalnız `OLD_DATABASE_URL` verildiyse); `last_source_time` kopyalanan en yeni işlem güncellemesi. Bağlanamazsa `last_error` sebebi söyler.
 - Sağlıklı bir satırda (`consecutive_failures` 0) `last_error` doluysa, o geçmişte görülmüş son hatadır; `last_error_at` ne zaman olduğunu söyler.
-- `axi:*` satırlarında `last_source_time` o dilimin son kapanmış mumunun açılışı. Örneğin 1d için dünün 21:00 UTC'si (İstanbul 00:00): bugünün günlük mumu henüz oluşuyor.
+- `axi:*` satırlarında `last_source_time` o dilimin son kapanmış mumunun açılışı. Örneğin 1d için dünün günlük mumu, kışın 22:00 UTC (İstanbul 01:00), yazın 21:00 UTC (İstanbul 00:00): bugünün günlük mumu henüz oluşuyor.
