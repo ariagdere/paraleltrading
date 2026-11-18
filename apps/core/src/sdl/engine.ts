@@ -285,11 +285,134 @@ export function candidateAt(ctx: DayContext, j: number): Candidate | null {
   }
 }
 
+// ─── Sırada bekleyen kurulumlar ────────────────────────────────────────────────────────────────────────────────
+// Günün j. 3m mumu kapandıktan sonra, sonraki kapanışlarda giriş verebilecek FVG'ler: bias yönünde, boşluğu en az
+// 50 $, henüz dönmemiş (FVG'den sonra hiçbir kapanış ötesine geçmemiş), hâlâ 80 mum içinde (en geç 20:00) ve giriş
+// zonu dönüşüm şartından geçiyor. Giriş, bir 3m kapanışının tetik seviyesinin ötesine geçmesiyle olur (short'ta altı):
+//   - tetik: iğnenin ulaştığı bir zon FVG'nin kenarını kapsıyor (short: zonun üstü ≥ FVG'nin altı); tetik FVG'nin
+//     kenarı.
+//   - derin: kapsamıyor; ulaşılan en üstteki zon seçilir ve FVG'nin altındaki İLK kapanışın o zonun üstünün de altında
+//     olması gerekir: tetik zonun kenarı. Arada (zonun üstü ile FVG'nin altı arasında) bir kapanış FVG'yi döndürür ve
+//     kurulum düşer (30 Ekim 10:45 gibi: tek mumda ikisinin de altında kapandı).
+//   - zon: iğne henüz hiçbir zona ulaşmadı (short: bütün zonlar fitilin üstünde); önce fiyatın en yakın zona ulaşması
+//     gerekiyor. SL en az zonun kenarı + 15.
+// Değerler girişin tetik seviyesinde olacağı varsayımıyla yaklaşık: iğne şimdiye kadarki en uç fitil (fiyat ilerlerse
+// SL de kayar); TP o girişin ötesindeki ilk zon (çok derin bir kapanış sonraki zonu seçer). Aynı kapanış birden çok
+// FVG'yi döndürürse en son oluşan alınır. Gerçek karar kapanışta candidateAt'le verilir. Long'da hepsinin aynası.
+export type Pending = {
+  day: string
+  side: Side
+  status: 'tetik' | 'derin' | 'zon'
+  fvgA: number
+  fvgI: number
+  gap: number
+  fvgLo: number
+  fvgHi: number
+  trigger: number // kapanışın geçmesi gereken seviye (short'ta altında, long'da üstünde)
+  ext: number
+  extT: number
+  zone: Zone
+  tpZone: Zone
+  entry: number // tetik seviyesinde giriş: short bid = tetik, long ask = tetik + spread
+  spread: number // $, son kapanan mumun spread'i
+  sl: number
+  tp: number
+  risk: number
+  rr: number
+  expiresAt: number // en son bu kapanışta dönebilir
+}
+
+export function pendingAt(ctx: DayContext, j: number, breaks: Map<number, Break[]>): Pending[] {
+  const { c3 } = ctx
+  if (j < 0 || j >= c3.length) return []
+  const D0 = istDayStart(ctx.day)
+  const T = c3[j]!.t + M3
+  let rep: BiasReport | null = null
+  for (const r of ctx.bias) if (r.at <= T) rep = r
+  if (!rep || (rep.bias !== 'LONG' && rep.bias !== 'SHORT')) return []
+  const side = rep.bias as Side
+  const S = side === 'SHORT'
+  const Zs = activeZones(ctx.zones, T)
+  const spread = (c3[j]!.sp ?? SDL.spreadDefaultPts) * SDL.point
+  const out: Pending[] = []
+  // Sonraki mum (j + 1) için uygun FVG'ler: i ≥ (j + 1) − 80 ve i ≤ j
+  for (let i = Math.max(2, j + 1 - SDL.fvgMaxAge); i <= j; i++) {
+    const a = c3[i - 2]!
+    const c = c3[i]!
+    const gap = S ? c.l - a.h : a.l - c.h
+    if (gap < SDL.minGap) continue
+    const edge = S ? a.h : a.l // FVG'nin kenarı
+    let turned = false
+    for (let k = i + 1; k <= j; k++) if (S ? c3[k]!.c < edge : c3[k]!.c > edge) turned = true
+    if (turned) continue
+    const expiresAt = Math.min(c.t + (SDL.fvgMaxAge + 1) * M3, D0 + SDL.winTo * H)
+    if (expiresAt < D0 + SDL.winFrom * H || expiresAt < T + M3) continue // pencere açılmadan ya da sonraki kapanıştan önce eskiyor
+    let ext = S ? -Infinity : Infinity
+    let extT = 0
+    for (let k = i - 2; k <= j; k++) {
+      const x = c3[k]!
+      if (S ? x.h > ext : x.l < ext) {
+        ext = S ? x.h : x.l
+        extT = x.t
+      }
+    }
+    const reach = Zs.filter((z) => (S ? z.lo <= ext : z.hi >= ext))
+    const atEdge = reach.filter((z) => (S ? z.hi >= edge : z.lo <= edge))
+    let zone: Zone
+    let trigger: number
+    let status: Pending['status'] = 'tetik'
+    let slBase = ext
+    if (atEdge.length > 0) {
+      zone = S ? pick(atEdge, (x, b) => x.lo > b.lo) : pick(atEdge, (x, b) => x.hi < b.hi)
+      trigger = edge
+    } else if (reach.length > 0) {
+      zone = S ? pick(reach, (x, b) => x.lo > b.lo) : pick(reach, (x, b) => x.hi < b.hi)
+      trigger = S ? zone.hi : zone.lo
+      status = 'derin'
+    } else {
+      const ahead = Zs.filter((z) => (S ? z.lo > ext : z.hi < ext))
+      if (ahead.length === 0) continue
+      zone = S ? pick(ahead, (x, b) => x.lo < b.lo) : pick(ahead, (x, b) => x.hi > b.hi)
+      trigger = edge
+      status = 'zon'
+      slBase = S ? zone.lo : zone.hi
+    }
+    const entry = S ? trigger : trigger + spread
+    const beyond = Zs.filter((z) => (S ? z.hi < entry : z.lo > entry))
+    if (beyond.length === 0) continue
+    const tpZone = S ? pick(beyond, (x, b) => x.hi > b.hi) : pick(beyond, (x, b) => x.lo < b.lo)
+    const tp = S ? tpZone.hi + SDL.tpBuf : tpZone.lo - SDL.tpBuf
+    if (S ? tp >= entry : tp <= entry) continue
+    if (!flipOk(breaks.get(zone.id), side, T)) continue
+    const sl = S ? slBase + SDL.slBuf : slBase - SDL.slBuf
+    const risk = Math.abs(entry - sl)
+    out.push({
+      day: ctx.day, side, status, fvgA: a.t, fvgI: c.t, gap, fvgLo: S ? a.h : c.h, fvgHi: S ? c.l : a.l, trigger, ext, extT,
+      zone, tpZone, entry, spread, sl, tp, risk, rr: Math.abs(tp - entry) / risk, expiresAt,
+    })
+  }
+  return out
+}
+
 // ─── Canlı kurallar ────────────────────────────────────────────────────────────────────────────────────────────
 // Haberin etkisi: [haber − 1 saat, haber + 30 dk) içinde yeni işlem yok. Dönen değer engelleyen haberin anı.
 export function newsBlock(events: number[], t: number): number | null {
   for (const e of events) if (t >= e - SDL.newsBeforeMs && t < e + SDL.newsAfterMs) return e
   return null
+}
+
+// Haber engelleri birleşik aralıklar olarak ([haber − 1 saat, haber + 30 dk), üst üste binenler tek aralık): from
+// anında süren ya da en geç until'de başlayan ilk engel; yoksa null.
+export function nextNewsBlock(events: number[], from: number, until: number): { from: number; to: number; at: number[] } | null {
+  const merged: Array<{ from: number; to: number; at: number[] }> = []
+  for (const e of [...events].sort((a, b) => a - b)) {
+    const last = merged.at(-1)
+    if (last && e - SDL.newsBeforeMs <= last.to) {
+      last.to = Math.max(last.to, e + SDL.newsAfterMs)
+      last.at.push(e)
+    } else merged.push({ from: e - SDL.newsBeforeMs, to: e + SDL.newsAfterMs, at: [e] })
+  }
+  return merged.find((b) => b.to > from && b.from <= until) ?? null
 }
 
 export type Verdict =

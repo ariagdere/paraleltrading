@@ -2,7 +2,7 @@
 
 core, elle çizilen zonlarla SDL v3 kurulumlarını her 3m kapanışında arar, kararını yazar ve kurallardan geçen kurulumda Axi'ye emir gönderir. Emir eski sistemin hesabına magic **15033** ile gider. Eski sistemin `mt5_order_monitor`'ü emri MT5 akışından görür ve eski DB'nin `orders` tablosuna **"SDL_v3 - Manuel Zone No Cap"** etiketiyle yazar; emir /live'da görünür. Yeni sistem eski DB'ye yazmaz.
 
-Kod: `apps/core/src/sdl/`. Şema: `packages/db/migrations/010_sdl.sql`. Sayfa: web'de **SDL**. Kararlar: Ari, 18 Kasım 2026 (proje notu `claude/sdl-elle-canli-plani.md`).
+Kod: `apps/core/src/sdl/`. Şema: `packages/db/migrations/010_sdl.sql`, `011_sdl_bekleyen.sql`. Sayfa: web'de **SDL**. Kararlar: Ari, 18 Kasım 2026 (proje notu `claude/sdl-elle-canli-plani.md`).
 
 ## Kurallar
 
@@ -39,6 +39,29 @@ Kurallar araştırma motorunun birebir karşılığı (proje notu `claude/sdl-v3
 - **Veri gelmezse:** kapanışın son 1m mumu 60 sn içinde hiçbir kaynaktan gelmezse o kapanış atlanır (Sağlık'ta hata).
 - **4h mumu:** son kapanan 4h mumu, kapanışından 5 dk geçmediyse 1m'lerden kurulur. Resmi mum kapanıştan sonra bir kez daha çekiliyor; ilk hali eksik olabilir.
 
+## Sırada bekleyen kurulumlar
+
+Her 3m kapanışından sonra, kararın ardından (emir gecikmesine eklenmez) sonraki kapanışlarda giriş verebilecek iFVG'ler `sdl_pending`'e yazılır (`engine.ts` `pendingAt`). SDL sayfasında en üstte, fiyata en yakın tetik başta.
+
+- **Liste:** bias yönünde, boşluğu en az 50 $, henüz dönmemiş, 80 mum içinde ve en geç 20:00'de dönebilecek FVG'ler; giriş zonu dönüşüm şartından geçenler. Dönüşümle elenecek kurulum listelenmez.
+- **Tetik:** 3m kapanışının geçmesi gereken seviye.
+  - `tetik`: iğnenin ulaştığı zon FVG'nin kenarını kapsıyor; tetik FVG'nin kenarı.
+  - `derin`: kapsamıyor; FVG'nin ötesindeki ilk kapanışın zonun kenarını da geçmesi gerekiyor, arada kapanırsa kurulum düşer (30 Ekim 10:45 gibi).
+  - `zon`: iğne henüz hiçbir zona ulaşmadı.
+- **Değerler** girişin tetikte olacağı varsayımıyla yaklaşık: SL şimdiye kadarki iğneden, TP o girişin ötesindeki ilk zondan, lot ve risk lot kuralıyla.
+- **Zaman:** bias geldikten sonra 07:00'den önce de yazılır (o saatten önceki dönüş işlem açmaz ve FVG'yi düşürür). Hafta sonu, 20:00'den sonra ve bias yokken liste boş; sebebi ve haber engeli `sdl_status.pending_info`'da.
+- **Doğrulama:** 2 Ekim – 13 Kasım'da kurallardan geçen 21 kurulumun 21'i bir önceki kapanışta listedeydi; dönüşümle elenen 22'den hiçbiri listede değildi.
+
+## Grafik
+
+SDL sayfasında bir satıra (bekleyen, canlı ya da tekrar) tıklayınca altında kurulumun iki grafiği açılır; araştırma sayfasındaki gibi (`claude/sdl-v3-ornek-trade.md`, TradingView pozisyon aracı görünümü):
+- **3 dakikalık:** FVG'den ve iğneden 30 dk önce → çıkıştan 15 dk sonra. FVG kutusu, iğne, giriş, zonlar; 1 iğne, 2 FVG, 3 giriş rozetleri.
+- **15 dakikalık:** 4 saat önce → çıkıştan 2 saat sonra.
+- **Çıkış:** gerçek işlem (eski sistemin kaydı) > benzetim > açık (son fiyat). Bekleyende planlanan pozisyon son mumun sağında, soluk; kesik çizgi tetik.
+- Veri `/api/sdl/grafik?kurulum=<id>` ya da `?bekleyen=<SHORT|LONG>-<FVG ms>`; mumlar `axi_candles` 1m'den, resmide olmayan son dakikalar `sdl_bars`'tan.
+
+Dönüşüm şartından elenen kurulumlar sayfadaki listelerde gösterilmez; tekrarda yalnız sayısı yazılır.
+
 ## Emir
 
 - **İki anahtar:** emir için ikisinin de açık olması gerekir.
@@ -66,7 +89,8 @@ Kurallar araştırma motorunun birebir karşılığı (proje notu `claude/sdl-v3
 | `sdl_setups` | Kurulumlar ve kararları: `mode` canli ya da tekrar; `decision` emir ya da atla; `reason` atlama sebebi. Benzetilen sonuç (`sim_*`) saatte bir. |
 | `sdl_orders` | Emir niyetleri ve MetaApi sonucu (MT5 emir ve pozisyon numarası, dolum). |
 | `trading_switch` | NO TRADE düğmesi (`sdl_elle`). |
-| `sdl_status` | core'un SDL durumu: Railway anahtarı, ayarlar, fiyat akışı. |
+| `sdl_status` | core'un SDL durumu: Railway anahtarı, ayarlar, fiyat akışı, bekleyen listesinin anı ve durumu. |
+| `sdl_pending` | Sırada bekleyen kurulumlar; her 3m kapanışında baştan yazılır. |
 
 **Geçmişin tekrarı** (`mode = tekrar`):
 - `SDL_REPLAY_FROM`'dan bu yana bütün kurulumları aynı kurallarla, resmi mumlarla yeniden hesaplar. Bias raporu araştırmadaki gibi üretildiği andan geçerli sayılır.

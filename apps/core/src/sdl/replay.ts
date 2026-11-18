@@ -7,10 +7,8 @@ import { logRun, markFail, markOk, type Pool } from '@pt/db'
 import type { SdlConfig } from './config.js'
 import { load4h, loadBias, loadDailyDays, loadM1, loadNews, loadSpec, loadZones } from './data.js'
 import { DAY, M3, MIN, firstIndexAtOrAfter, istDay, rMultiple, scan, simExit, type Bar, type Side } from './engine.js'
-import { computeSizing, type Spec } from './sizing.js'
+import { DEFAULT_SPEC, computeSizing } from './sizing.js'
 import { replaceReplay, type SetupWrite } from './store.js'
-
-const DEFAULT_SPEC: Spec = { contractSize: 1, minVolume: 0.01, maxVolume: 100, volumeStep: 0.01, stopsLevel: 0, point: 0.01 }
 
 export async function replayTick(pool: Pool, cfg: SdlConfig, symbol: string): Promise<void> {
   const source = 'sdl:tekrar'

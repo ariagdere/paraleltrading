@@ -164,6 +164,46 @@
   text-align: right !important;
 }
 
+/* Tıklanınca altında grafik açılan satır */
+.clickRow {
+  cursor: pointer;
+}
+
+.clickRow:hover > * {
+  background: color-mix(in srgb, var(--ink-3) 55%, transparent);
+}
+
+.clickRow[data-open='true'] > * {
+  background: var(--ink-2);
+  border-bottom-color: transparent;
+}
+
+.table .chartRow > td {
+  padding: 0;
+  background: var(--ink-2);
+  white-space: normal;
+}
+
+.rowToggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.chev {
+  display: inline-block;
+  width: 0.8em;
+  color: var(--muted);
+}
+
 .note {
   color: var(--muted);
   font-size: var(--fs-sm);
