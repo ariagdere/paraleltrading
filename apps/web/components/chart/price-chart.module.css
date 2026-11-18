@@ -93,6 +93,12 @@
   background: color-mix(in srgb, var(--zone) 30%, transparent);
 }
 
+.markManual {
+  border-top: 1.5px solid var(--manual);
+  border-bottom: 1.5px solid var(--manual);
+  background: color-mix(in srgb, var(--manual) 30%, transparent);
+}
+
 .markPrev {
   height: 0;
   border-top: 2px dashed var(--muted);
