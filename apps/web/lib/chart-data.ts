@@ -1,5 +1,5 @@
 import { axiOpen, axiToUtc } from '@pt/db/axitime'
-import { MAX_CANDLES, TF_MS, type CandleRow, type ChartTf, type ChartTokens, type PrevLevels, type Zones } from './chart-shared'
+import { MAX_CANDLES, TF_MS, type CandleRow, type ChartTf, type ChartTokens, type ManualZone, type PrevLevels, type Zones } from './chart-shared'
 import { db } from './db'
 import { SYMBOL } from './market-data'
 
@@ -113,6 +113,20 @@ export async function loadZones(): Promise<Zones> {
   }
 }
 
+// Elle zonlar: şu an geçerli olanların hepsi (Ari'nin çizdiği; zon eklemek ya da kapatmak şimdilik veritabanından).
+const ACTIVE_MANUAL = `created_at <= now() AND (ended_at IS NULL OR ended_at > now())`
+export async function loadManualZones(): Promise<ManualZone[]> {
+  try {
+    const { rows } = await db().query<{ id: number; lo: number; hi: number; created_at: Date }>(
+      `SELECT id, lo, hi, created_at FROM elle_zones WHERE ${ACTIVE_MANUAL} ORDER BY lo DESC`,
+    )
+    return rows.map((r) => ({ id: r.id, lo: r.lo, hi: r.hi, createdAt: r.created_at.getTime() }))
+  } catch (err) {
+    if ((err as { code?: string }).code === '42P01') return [] // tablo yok (010 uygulanmamış)
+    throw err
+  }
+}
+
 const DAY = 86_400_000
 const IST = 3 * 3_600_000
 
@@ -140,7 +154,7 @@ export async function loadPrevLevels(now: Date): Promise<PrevLevels> {
 
 export async function loadChartTokens(): Promise<ChartTokens> {
   const pool = db()
-  const [c, z, h] = await Promise.all([
+  const [c, z, h, m] = await Promise.all([
     pool.query<{ t: string | null }>(
       `SELECT (extract(epoch FROM max(open_time)) * 1000)::bigint::text AS t FROM axi_candles WHERE symbol = $1 AND timeframe = '1m'`,
       [SYMBOL],
@@ -157,8 +171,16 @@ export async function loadChartTokens(): Promise<ChartTokens> {
       `SELECT s.span, (SELECT id FROM heatmap_snapshots WHERE span = s.span ORDER BY received_at DESC LIMIT 1) AS id
        FROM unnest(ARRAY['12h', '24h', '48h']) AS s(span)`,
     ),
+    pool
+      .query<{ k: string | null }>(
+        `SELECT count(*) FILTER (WHERE ${ACTIVE_MANUAL}) || ':' || coalesce(max(inserted_at)::text, '') || ':' || coalesce(max(ended_at)::text, '') AS k FROM elle_zones`,
+      )
+      .catch((err) => {
+        if ((err as { code?: string }).code === '42P01') return { rows: [{ k: null }] }
+        throw err
+      }),
   ])
   const heat: ChartTokens['heat'] = { '12h': null, '24h': null, '48h': null }
   for (const r of h.rows) heat[r.span] = r.id === null ? null : Number(r.id)
-  return { candle: c.rows[0]?.t ? Number(c.rows[0].t) : null, zones: z.rows[0]?.at?.toISOString() ?? null, heat }
+  return { candle: c.rows[0]?.t ? Number(c.rows[0].t) : null, zones: z.rows[0]?.at?.toISOString() ?? null, manual: m.rows[0]?.k ?? null, heat }
 }

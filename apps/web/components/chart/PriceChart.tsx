@@ -17,18 +17,18 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CHART_TFS, TF_MS, type CandleRow, type ChartTf, type ChartTokens, type ChartZone, type PrevLevels, type Zones } from '@/lib/chart-shared'
+import { CHART_TFS, TF_MS, type CandleRow, type ChartTf, type ChartTokens, type ChartZone, type ManualZone, type PrevLevels, type Zones } from '@/lib/chart-shared'
 import type { HeatView, Span } from '@/lib/market-data'
 import { useLive, type LiveQuote } from '../live'
 import { applyQuote, mergeTail, type CandleBody } from './bars'
-import { HeatLevels, PrevList, ZoneList } from './details'
+import { HeatLevels, ManualList, PrevList, ZoneList } from './details'
 import { dmh, fmt1, fmtP, hm, usd } from './format'
-import { HeatLayer, TimeAxis, ZoneLayer, bandAt, rgba } from './layers'
+import { HeatLayer, ManualZoneLayer, TimeAxis, ZoneLayer, bandAt, rgba } from './layers'
 import s from './price-chart.module.css'
 
 // Temel fiyat grafiği: Axi mumları (5m–1d, sürükleyerek geçmişe kaydırılır, tekerlekle yakınlaştırılır) ve
 // düğmeyle açılıp kapanan katmanlar: heatmap (ısı ve sağ kenarda likidasyon profili), cluster'lar, destek/direnç
-// bölgeleri, önceki gün/hafta seviyeleri. Sondaki mumlar oluşan mumlar: kayıtlı son mumdan sonrası 1m mumlarından;
+// bölgeleri, elle zonlar (geçerli olanların hepsi), önceki gün/hafta seviyeleri. Sondaki mumlar oluşan mumlar: kayıtlı son mumdan sonrası 1m mumlarından;
 // canlı akış varken her quote'la (bid) güncellenir, dilim dolunca yeni mum açılır. Veriyi API'den okur; sayfanın
 // dakikalık yenilemesi yalnız "değişti mi" işaretlerini getirir: yeni 1m mumu gelince son mumlar, bölgeler yeniden
 // hesaplanınca bölgeler, seçili pencerede yeni snapshot olunca heatmap okunur. Seçimler (dilim, katmanlar, pencere)
@@ -43,14 +43,15 @@ const LOAD = 600 // bir okumada mum
 const SPANS: Span[] = ['12h', '24h', '48h']
 const LIST_PRICE_MS = 5000 // alttaki listelerde fiyat en çok bu sıklıkta değişir
 
-type LayerKey = 'heat' | 'clusters' | 'zones' | 'prev'
+type LayerKey = 'heat' | 'clusters' | 'zones' | 'manual' | 'prev'
 type Prefs = { tf: ChartTf; span: Span; layers: Record<LayerKey, boolean> }
-const DEFAULT_PREFS: Prefs = { tf: '15m', span: '24h', layers: { heat: true, clusters: true, zones: true, prev: false } }
+const DEFAULT_PREFS: Prefs = { tf: '15m', span: '24h', layers: { heat: true, clusters: true, zones: true, manual: true, prev: false } }
 const PREFS_KEY = 'hakari2.piyasa.grafik.v1'
 const LAYERS: Array<[LayerKey, string, keyof typeof s]> = [
   ['heat', 'Heatmap', 'markHeat'],
   ['clusters', "Cluster'lar", 'markCluster'],
   ['zones', 'Destek/direnç', 'markZone'],
+  ['manual', 'Elle zonlar', 'markManual'],
   ['prev', 'Önceki gün/hafta', 'markPrev'],
 ]
 
@@ -70,7 +71,7 @@ function readPrefs(): Prefs {
   }
 }
 
-type Colors = Record<'surface' | 'line' | 'grid' | 'text' | 'muted' | 'up' | 'down' | 'heat' | 'zone', string>
+type Colors = Record<'surface' | 'line' | 'grid' | 'text' | 'muted' | 'up' | 'down' | 'heat' | 'zone' | 'manual', string>
 function readColors(el: Element): Colors {
   const st = getComputedStyle(el)
   const v = (n: string) => st.getPropertyValue(n).trim()
@@ -84,6 +85,7 @@ function readColors(el: Element): Colors {
     down: v('--down'),
     heat: v('--heat'),
     zone: v('--zone'),
+    manual: v('--manual'),
   }
 }
 
@@ -120,6 +122,7 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [zones, setZones] = useState<ChartZone[]>([])
+  const [manualZones, setManualZones] = useState<ManualZone[]>([])
   const [heat, setHeat] = useState<HeatView | null>(null)
   const [heatBusy, setHeatBusy] = useState(false)
   const live = useLive()
@@ -132,6 +135,7 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
   const axis = useRef(new TimeAxis())
   const heatLayer = useRef<HeatLayer | null>(null)
   const zoneLayer = useRef<ZoneLayer | null>(null)
+  const manualLayer = useRef<ManualZoneLayer | null>(null)
   const colors = useRef<Colors | null>(null)
   const rows = useRef<CandleRow[]>([]) // ekrandaki mumlar, eskiden yeniye: önce kayıtlılar, sonra oluşanlar
   const stored = useRef(0) // rows'un baştan kaçı kayıtlı (kapanmış) mum
@@ -144,8 +148,10 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
   const lines = useRef<{ clusters: IPriceLine[]; prev: IPriceLine[]; live: IPriceLine | null }>({ clusters: [], prev: [], live: null })
   const prefsRef = useRef(prefs)
   const zonesRef = useRef<ChartZone[]>([])
+  const manualRef = useRef<ManualZone[]>([])
   prefsRef.current = prefs
   zonesRef.current = zones
+  manualRef.current = manualZones
 
   useEffect(() => {
     setPrefs(readPrefs())
@@ -178,6 +184,7 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
     }
     heatLayer.current?.update()
     zoneLayer.current?.update()
+    manualLayer.current?.update()
   }, [])
 
   // Sondaki mumları seriye işler (from'dan sona; eskiler yerinde güncellenir, yeniler eklenir).
@@ -193,6 +200,7 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
       )
       heatLayer.current?.update()
       zoneLayer.current?.update()
+      manualLayer.current?.update()
     }
     drawn.current = cur.length
   }, [])
@@ -283,6 +291,15 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
           el.append(box)
         }
       }
+      if (L.manual) {
+        const m = manualRef.current.find((x) => tReal >= x.createdAt && at >= x.lo && at <= x.hi)
+        if (m) {
+          const box = document.createElement('div')
+          box.className = s.tipZone!
+          add(box, `elle zon #${m.id}`, `${fmtP.format(m.lo)}–${fmtP.format(m.hi)}`, true)
+          el.append(box)
+        }
+      }
     }
     el.hidden = false
     const W = box.current!.clientWidth
@@ -350,12 +367,19 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
     zl.text = C.text
     zl.bg = C.surface
     zl.font = font
+    const ml = new ManualZoneLayer(axis.current)
+    ml.color = C.manual
+    ml.text = C.text
+    ml.bg = C.surface
+    ml.font = font
     se.attachPrimitive(hl)
     se.attachPrimitive(zl)
+    se.attachPrimitive(ml)
     chart.current = ch
     series.current = se
     heatLayer.current = hl
     zoneLayer.current = zl
+    manualLayer.current = ml
     ch.subscribeCrosshairMove(onCrosshair)
     ch.timeScale().subscribeVisibleLogicalRangeChange(loadOlder)
     return () => {
@@ -364,6 +388,7 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
       series.current = null
       heatLayer.current = null
       zoneLayer.current = null
+      manualLayer.current = null
       lines.current = { clusters: [], prev: [], live: null }
     }
   }, [onCrosshair, loadOlder])
@@ -456,6 +481,19 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
       .then((z) => setZones(z.zones))
       .catch((err) => setError(`Bölgeler okunamadı: ${(err as Error).message}`))
   }, [tokens.zones])
+
+  // Elle zonlar: açılışta ve biri eklenip kapanınca (geçerli olanların hepsi).
+  useEffect(() => {
+    getJson<{ zones: ManualZone[] }>('/api/piyasa/elle-zonlar')
+      .then((b) => setManualZones(b.zones))
+      .catch((err) => setError(`Elle zonlar okunamadı: ${(err as Error).message}`))
+  }, [tokens.manual])
+  useEffect(() => {
+    manualLayer.current?.setZones(manualZones)
+  }, [manualZones])
+  useEffect(() => {
+    manualLayer.current?.setVisible(prefs.layers.manual)
+  }, [prefs.layers.manual])
 
   // Heatmap: heatmap ya da cluster katmanı açıksa, seçili pencerenin en yeni snapshot'ı; yenisi gelince yeniden.
   const heatSeq = useRef(0)
@@ -660,6 +698,7 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
       </div>
       <div className={s.details}>
         {prefs.layers.zones && <ZoneList zones={shownZones} price={listPrice} />}
+        {prefs.layers.manual && <ManualList zones={manualZones} price={listPrice} />}
         {wantHeat && heat && <HeatLevels view={heat} price={listPrice} clusters={prefs.layers.clusters} />}
         {wantHeat && !heat && !heatBusy && <p className={s.muted}>Bu pencerede heatmap snapshot&apos;ı yok.</p>}
         {prefs.layers.prev && <PrevList prev={prev} price={listPrice} />}

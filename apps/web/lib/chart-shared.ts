@@ -23,6 +23,9 @@ export type ChartZone = {
 }
 export type Zones = { version: string | null; computedAt: string | null; zones: ChartZone[] }
 
+// Elle zon (elle_zones; Ari'nin çizdiği, SDL v3 elle zon modeli bunlarla işlem yapıyor): şu an geçerli olanlar.
+export type ManualZone = { id: number; lo: number; hi: number; createdAt: number }
+
 export type PrevLevels = {
   day: { at: number; h: number; l: number; c: number } | null // dün (kapanmış son günlük mum)
   week: { at: number; o: number; h: number; l: number; c: number } | null // geçen hafta (pazartesi 00:00 İstanbul'dan)
@@ -31,5 +34,6 @@ export type PrevLevels = {
 export type ChartTokens = {
   candle: number | null // son 1m mumunun açılışı: değişince grafik yeni mumları okur
   zones: string | null // bölgelerin son hesap anı
+  manual: string | null // elle zonların değişim işareti (zon eklenince, kapanınca, geçerliliği başlayınca değişir)
   heat: Record<'12h' | '24h' | '48h', number | null> // pencere başına en yeni snapshot
 }

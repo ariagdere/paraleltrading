@@ -8,11 +8,11 @@ import type {
   SeriesAttachedParameter,
   Time,
 } from 'lightweight-charts'
-import type { ChartZone } from '@/lib/chart-shared'
+import type { ChartZone, ManualZone } from '@/lib/chart-shared'
 import type { HeatGrid } from '@/lib/heatmap'
 
 // Grafiğin üstüne çizilen katmanlar (Lightweight Charts eklentisi olarak): heatmap ısısı ve likidasyon profili,
-// destek/direnç bantları. İkisi de mumların altında çizilir.
+// destek/direnç bantları, elle zonlar. Hepsi mumların altında çizilir; yazıları mumların üstünde.
 
 type Target = Parameters<IPrimitivePaneRenderer['draw']>[0]
 
@@ -324,6 +324,83 @@ export class ZoneLayer extends Layer {
         ctx.fillRect(xl - w - 4 * hr, ym - 8 * vr, w + 8 * hr, 16 * vr)
         ctx.fillStyle = rgba(this.text, 0.9)
         ctx.fillText(label, xl, ym)
+      }
+    })
+  }
+}
+
+// Elle zonlar (Ari'nin çizdiği; SDL v3 elle zon modeli bunlarla işlem yapıyor): şu an geçerli olanların hepsi,
+// geçerli olduğu andan sağ kenara bant. Numarası (#7) bandın solunda; destek/direncin güç yazısı sağda olduğu için
+// ikisi birlikte açıkken de karışmaz, renk de ayrı (turkuaz). Sol alttaki TradingView logosunun üstüne yazı konmaz.
+export class ManualZoneLayer extends Layer {
+  private zones: ManualZone[] = []
+  color = '#27b0c4'
+  text = '#e9edf5'
+  bg = '#1a2336'
+  font = 'sans-serif'
+
+  setZones(zones: ManualZone[]) {
+    this.zones = zones
+    this.update()
+  }
+
+  private box(z: ManualZone, X: (t: number) => number | null, W: number, H: number, hr: number, vr: number) {
+    const a = X(z.createdAt)
+    const yt = this.y(z.hi)
+    const yb = this.y(z.lo)
+    if (a === null || yt === null || yb === null) return null
+    const x0 = Math.max(0, a * hr)
+    const y0 = yt * vr
+    const y1 = yb * vr
+    if (x0 >= W || y1 < 0 || y0 > H) return null
+    return { x0, y0, y1 }
+  }
+
+  protected draw(target: Target) {
+    target.useBitmapCoordinateSpace(({ context: ctx, bitmapSize, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
+      const W = bitmapSize.width
+      const H = bitmapSize.height
+      const X = this.xScale()
+      for (const z of this.zones) {
+        const b = this.box(z, X, W, H, hr, vr)
+        if (!b) continue
+        ctx.fillStyle = rgba(this.color, 0.16)
+        ctx.fillRect(b.x0, b.y0, W - b.x0, Math.max(1, b.y1 - b.y0))
+        ctx.strokeStyle = rgba(this.color, 0.85)
+        ctx.lineWidth = Math.max(1, hr)
+        ctx.beginPath()
+        ctx.moveTo(b.x0, Math.round(b.y0) + 0.5)
+        ctx.lineTo(W, Math.round(b.y0) + 0.5)
+        ctx.moveTo(b.x0, Math.round(b.y1) + 0.5)
+        ctx.lineTo(W, Math.round(b.y1) + 0.5)
+        if (b.x0 > 0) {
+          ctx.moveTo(Math.round(b.x0) + 0.5, b.y0)
+          ctx.lineTo(Math.round(b.x0) + 0.5, b.y1)
+        }
+        ctx.stroke()
+      }
+    })
+  }
+
+  protected drawTop(target: Target) {
+    target.useBitmapCoordinateSpace(({ context: ctx, bitmapSize, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
+      const W = bitmapSize.width
+      const H = bitmapSize.height
+      const X = this.xScale()
+      ctx.font = `600 ${11 * vr}px ${this.font}`
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'middle'
+      for (const z of this.zones) {
+        const b = this.box(z, X, W, H, hr, vr)
+        if (!b) continue
+        const ym = (Math.max(0, b.y0) + Math.min(H, b.y1)) / 2 // bandın görünen kısmının ortası
+        const label = `#${z.id}`
+        const w = ctx.measureText(label).width
+        const x = b.x0 + (b.x0 < 56 * hr && ym > H - 44 * vr ? 56 : 8) * hr
+        ctx.fillStyle = rgba(this.bg, 0.8)
+        ctx.fillRect(x - 4 * hr, ym - 8 * vr, w + 8 * hr, 16 * vr)
+        ctx.fillStyle = rgba(this.text, 0.92)
+        ctx.fillText(label, x, ym)
       }
     })
   }
