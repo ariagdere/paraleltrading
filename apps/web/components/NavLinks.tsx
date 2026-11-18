@@ -9,6 +9,7 @@ const LINKS = [
   { href: '/piyasa', label: 'Piyasa' },
   { href: '/dogrulama', label: 'Doğrulama' },
   { href: '/simulasyon', label: 'Simülasyon' },
+  { href: '/sdl', label: 'SDL' },
   { href: '/saglik', label: 'Sağlık' },
 ]
 

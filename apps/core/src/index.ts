@@ -5,13 +5,16 @@
 // turundan sonra) yeni ya da düzeltilmiş mumları, yeni heatmap snapshot'larını ve L/S noktalarını işler.
 // Ayrı bir iş (dakikada bir, saniye 40) kombinasyon simülasyonunu yürütür: aylık koşu ve web'den istenen koşular,
 // sonuçların ve Claude yorumlarının sim-data dalıyla eşitlenmesi (sim/job.ts).
+// SDL v3, elle zonlar (sdl/): MetaApi fiyat akışından 1m mumlar, her 3m kapanışında kurulum ve karar, emir kapısı
+// (magic 15033; Railway'de SDL_TRADING_ENABLED ve web'deki NO TRADE düğmesi), saatte bir geçmişin yeniden oynatması.
 import { createPool, every, migrate, type Job, type Pool } from '@pt/db'
 import { syncHeatmapLevels } from './heatmap.js'
 import { syncLsrAngles } from './lsr.js'
 import { syncNaive } from './naif.js'
 import { simTick } from './sim/job.js'
 import { syncZones } from './sr.js'
-import { syncIndicators } from './sync.js'
+import { startSdl } from './sdl/index.js'
+import { SYMBOL, syncIndicators } from './sync.js'
 
 // Deploy sırasında eski ve yeni süreç kısa süre birlikte açık kalabilir; bu kilitle yalnız biri çalışır.
 const CORE_LOCK = 72026103
@@ -52,6 +55,8 @@ const turn = () =>
     .then(() => syncLsrAngles(pool))
     .then(() => syncNaive(pool))
 const first = turn()
+// SDL (elle zonlar): kendi zamanlaması (3m kapanışları, fiyat akışı); core turunu beklemez.
+jobs.push(...startSdl(pool, SYMBOL))
 
 async function stop(signal: string) {
   console.log(`[core] ${signal} alındı, kapanıyor`)

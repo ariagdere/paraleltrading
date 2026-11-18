@@ -9,8 +9,8 @@
 // üste olmadıysa sarı (geçici: zaman aşımı, tekrar deneniyor), değilse kırmızı.
 // Bakım işleri (boşluk denetimi, sembol bilgisi, geçmiş doldurma, bütçe bekçisi, eski DB kopyası) canlı veriyi
 // doğrudan etkilemez: en çok sarı.
-// Bias: rutin hafta içi 09:07'de. Hafta içi 12:00'ye kadar bugünkü rapor gelmediyse kırmızı, öncesinde
-// "bekleniyor", hafta sonu rapor beklenmez. Okuma hatası (GitHub) rapor gecikmedikçe sarı.
+// Bias: rutin hafta içi 06:45'te (SDL 07:00'de işleme başlıyor). Hafta içi 09:00'a kadar bugünkü rapor gelmediyse kırmızı,
+// öncesinde "bekleniyor", hafta sonu rapor beklenmez. Okuma hatası (GitHub) rapor gecikmedikçe sarı.
 // Core satırının sorunu kaynağından geliyorsa (Axi 15m mumu gelmiyorsa 15m göstergesi de gecikir) özette
 // yalnız kaynak sayılır.
 
@@ -37,11 +37,11 @@ export const GROUPS: Array<{ key: GroupKey; title: string; about: string }> = [
   { key: 'axi', title: 'Axi BTCUSD', about: "MetaApi'den kapanmış mumlar; göstergeleri ve destek/direnç bölgelerini core hesaplar." },
   { key: 'heatmap', title: "Likidasyon heatmap'i", about: "CoinGlass model1, Apify ile saatte bir; seviyeleri core hesaplar." },
   { key: 'lsr', title: 'Long/Short oranı', about: "Binance futures, 5 dakikada bir; açıları core hesaplar." },
-  { key: 'bias', title: 'Günlük bias', about: 'Claude rutini, hafta içi her gün 09:07; GitHub bias-data dalından.' },
+  { key: 'bias', title: 'Günlük bias', about: 'Claude rutini, hafta içi her gün 06:45; GitHub bias-data dalından.' },
   {
     key: 'strategy',
     title: 'Strateji',
-    about: "Naif kuralın kararları (doğrulama; core her 12h snapshot'ında) ve kombinasyon simülasyonu (her ayın 1'i; sonuç ve Claude yorumu sim-data dalında).",
+    about: "Naif kuralın kararları (doğrulama; core her 12h snapshot'ında), kombinasyon simülasyonu (her ayın 1'i; sonuç ve Claude yorumu sim-data dalında) ve SDL (elle zonlar; fiyat akışı, her 3m kapanışında karar, emir, saatte bir geçmişin tekrarı).",
   },
   { key: 'legacy', title: 'Eski sistem', about: "Eski DB'den işlemler ve olaylar, saatte bir (salt okunur)." },
   { key: 'other', title: 'Diğer', about: 'Bu sayfanın tanımadığı kaynaklar.' },
@@ -109,6 +109,16 @@ export const CATALOG: Def[] = [
   },
   { source: 'core:sim', group: 'strategy', label: 'Simülasyon', name: 'Kombinasyon simülasyonu', kind: 'job', critical: false },
   { source: 'core:sim-yorum', group: 'strategy', label: 'Simülasyon dalı', name: 'Simülasyon sonuç ve yorum eşitlemesi', kind: 'job', critical: false },
+  {
+    source: 'sdl:akis', group: 'strategy', section: 'SDL', label: 'Fiyat akışı', name: 'SDL fiyat akışı', kind: 'candle', critical: false,
+    stepMs: MIN, dataWord: 'son mum',
+  },
+  {
+    source: 'sdl:karar', group: 'strategy', section: 'SDL', label: 'Kararlar', name: 'SDL kararları', kind: 'candle', critical: true,
+    stepMs: 3 * MIN, dataWord: 'son 3m kapanışı', upstream: ['axi:1m'],
+  },
+  { source: 'sdl:emir', group: 'strategy', section: 'SDL', label: 'Emirler', name: 'SDL emirleri', kind: 'backfill', critical: false },
+  { source: 'sdl:tekrar', group: 'strategy', section: 'SDL', label: 'Geçmişin tekrarı', name: 'SDL geçmişin tekrarı', kind: 'job', critical: false },
   { source: 'legacy', group: 'legacy', label: 'İşlem kopyası', name: 'Eski sistem kopyası', kind: 'job', critical: false },
 ]
 
@@ -263,7 +273,7 @@ function evaluateOne(def: Def, r: StatusRow | undefined, now: Date, fails24h: nu
   }
 }
 
-// Bias: hafta içi her gün 09:07'de rapor. Kaynak zamanı en yeni raporun dala düştüğü an (commit).
+// Bias: hafta içi her gün 06:45'te rapor. Kaynak zamanı en yeni raporun dala düştüğü an (commit).
 function evaluateBias(
   def: Def,
   r: StatusRow,
@@ -275,7 +285,7 @@ function evaluateBias(
   const today = last !== null && istanbulDay(last) === istanbulDay(now)
   const { dow, hour } = istanbulWeekHour(now)
   const weekend = dow >= 6
-  const missed = !today && !weekend && hour >= 12
+  const missed = !today && !weekend && hour >= 9
   const data = today ? `bugünkü rapor ${clock(last, now)}` : last ? `son rapor ${clock(last, now)}` : 'henüz rapor yok'
   const nextDay = dow >= 5 ? 'pazartesi' : 'yarın'
 
@@ -286,22 +296,22 @@ function evaluateBias(
     next = missed
       ? 'bugünkü rapor gelmedi'
       : today
-        ? `sonraki ${nextDay} 09:07`
+        ? `sonraki ${nextDay} 06:45`
         : weekend
           ? 'hafta sonu rapor gelmez'
-          : "bugünkü rapor 12:00'ye kadar bekleniyor"
+          : "bugünkü rapor 09:00'a kadar bekleniyor"
   } else if (today) {
     state = 'ok'
-    next = `sonraki ${nextDay} 09:07`
+    next = `sonraki ${nextDay} 06:45`
   } else if (weekend) {
     state = 'off'
     next = 'hafta sonu rapor gelmez'
   } else if (!missed) {
     state = 'waiting'
-    next = "bugünkü rapor 12:00'ye kadar bekleniyor"
+    next = "bugünkü rapor 09:00'a kadar bekleniyor"
   } else {
     state = 'stale'
-    next = "bugünkü rapor 12:00'ye kadar gelmedi"
+    next = "bugünkü rapor 09:00'a kadar gelmedi"
   }
   // Okuma hatası rapor gecikene kadar sarı: önemli olan raporun zamanında gelmesi.
   const level: Level = state === 'ok' ? 'ok' : state === 'off' || state === 'waiting' ? 'idle' : missed ? 'down' : 'late'
