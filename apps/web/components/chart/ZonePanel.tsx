@@ -11,6 +11,7 @@ import s from './price-chart.module.css'
 
 const f2 = new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 2 })
 const f0 = new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 0 })
+const round2 = (v: number) => Math.round(v * 100) / 100
 
 // "74250", "74250,5", "74.250,5", "74,250.5" → sayı
 export function parsePrice(text: string): number | null {
@@ -48,12 +49,20 @@ export type ZonePanelProps = {
   onCancel: () => void
 }
 
-function PriceInput({ label, value, onValue }: { label: string; value: number; onValue: (v: number) => void }) {
+// Yazılan fiyat çıkınca ya da Enter'da işlenir (her tuşta değil: yazarken bant yerinden oynamasın). İlk Enter fiyatı
+// işler, değişmemiş fiyatta Enter kaydetmeye gider.
+function PriceInput({ label, value, onCommit }: { label: string; value: number; onCommit: (v: number) => void }) {
   const [text, setText] = useState(f2.format(value))
   const [focus, setFocus] = useState(false)
   useEffect(() => {
     if (!focus) setText(f2.format(value))
   }, [value, focus])
+  const commit = () => {
+    const v = parsePrice(text)
+    if (v === null || v === value) return false
+    onCommit(v)
+    return true
+  }
   return (
     <label className={s.zField}>
       <span>{label}</span>
@@ -64,12 +73,11 @@ function PriceInput({ label, value, onValue }: { label: string; value: number; o
         onFocus={() => setFocus(true)}
         onBlur={() => {
           setFocus(false)
-          setText(f2.format(value))
+          if (!commit()) setText(f2.format(value))
         }}
-        onChange={(e) => {
-          setText(e.target.value)
-          const v = parsePrice(e.target.value)
-          if (v !== null) onValue(v)
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && commit()) e.stopPropagation()
         }}
       />
     </label>
@@ -160,8 +168,9 @@ export function ZonePanel(p: ZonePanelProps) {
       ) : (
         <>
           <div className={s.zRow}>
-            <PriceInput label="Üst" value={d.hi} onValue={(v) => v > d.lo && p.onDraft(d.lo, v)} />
-            <PriceInput label="Alt" value={d.lo} onValue={(v) => v < d.hi && p.onDraft(v, d.hi)} />
+            {/* yazılan kenar diğerini geçerse bant genişliği korunarak taşınır */}
+            <PriceInput label="Üst" value={d.hi} onCommit={(v) => p.onDraft(v > d.lo ? d.lo : round2(v - (d.hi - d.lo)), v)} />
+            <PriceInput label="Alt" value={d.lo} onCommit={(v) => p.onDraft(v, v < d.hi ? d.hi : round2(v + (d.hi - d.lo)))} />
             <p className={`num ${s.zWidth}`}>
               {f2.format(d.hi - d.lo)} $ · %{((100 * (d.hi - d.lo)) / d.lo).toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
             </p>
