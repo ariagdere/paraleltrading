@@ -252,7 +252,7 @@ export class HeatLayer extends Layer {
 }
 
 // Elle zonlar (Ari'nin çizdiği; SDL v3 elle zon modeli bunlarla işlem yapıyor): şu an geçerli olanların hepsi,
-// geçerli olduğu andan sağ kenara turkuaz bant (eski sistemin /live grafiğindekiyle aynı renk). Numarası (#7) bandın
+// grafik boyunca turkuaz bant (eski sistemin /live grafiğindekiyle aynı renk). Numarası (#7) bandın
 // solunda, sağdaki heatmap profilinden uzakta; sol alttaki TradingView logosunun üstüne yazı konmaz.
 export class ManualZoneLayer extends Layer {
   private zones: ManualZone[] = []
@@ -266,25 +266,23 @@ export class ManualZoneLayer extends Layer {
     this.update()
   }
 
-  private box(z: ManualZone, X: (t: number) => number | null, W: number, H: number, hr: number, vr: number) {
-    const a = X(z.createdAt)
+  // Geçerli zon grafik boyunca (geçerliliğin başladığı andan değil; Ari, 18 Kasım).
+  private box(z: ManualZone, H: number, vr: number) {
     const yt = this.y(z.hi)
     const yb = this.y(z.lo)
-    if (a === null || yt === null || yb === null) return null
-    const x0 = Math.max(0, a * hr)
+    if (yt === null || yb === null) return null
     const y0 = yt * vr
     const y1 = yb * vr
-    if (x0 >= W || y1 < 0 || y0 > H) return null
-    return { x0, y0, y1 }
+    if (y1 < 0 || y0 > H) return null
+    return { x0: 0, y0, y1 }
   }
 
   protected draw(target: Target) {
     target.useBitmapCoordinateSpace(({ context: ctx, bitmapSize, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
       const W = bitmapSize.width
       const H = bitmapSize.height
-      const X = this.xScale()
       for (const z of this.zones) {
-        const b = this.box(z, X, W, H, hr, vr)
+        const b = this.box(z, H, vr)
         if (!b) continue
         ctx.fillStyle = rgba(this.color, 0.16)
         ctx.fillRect(b.x0, b.y0, W - b.x0, Math.max(1, b.y1 - b.y0))
@@ -295,10 +293,6 @@ export class ManualZoneLayer extends Layer {
         ctx.lineTo(W, Math.round(b.y0) + 0.5)
         ctx.moveTo(b.x0, Math.round(b.y1) + 0.5)
         ctx.lineTo(W, Math.round(b.y1) + 0.5)
-        if (b.x0 > 0) {
-          ctx.moveTo(Math.round(b.x0) + 0.5, b.y0)
-          ctx.lineTo(Math.round(b.x0) + 0.5, b.y1)
-        }
         ctx.stroke()
       }
     })
@@ -306,14 +300,12 @@ export class ManualZoneLayer extends Layer {
 
   protected drawTop(target: Target) {
     target.useBitmapCoordinateSpace(({ context: ctx, bitmapSize, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
-      const W = bitmapSize.width
       const H = bitmapSize.height
-      const X = this.xScale()
       ctx.font = `600 ${11 * vr}px ${this.font}`
       ctx.textAlign = 'left'
       ctx.textBaseline = 'middle'
       for (const z of this.zones) {
-        const b = this.box(z, X, W, H, hr, vr)
+        const b = this.box(z, H, vr)
         if (!b) continue
         const ym = (Math.max(0, b.y0) + Math.min(H, b.y1)) / 2 // bandın görünen kısmının ortası
         const label = `#${z.id}`
