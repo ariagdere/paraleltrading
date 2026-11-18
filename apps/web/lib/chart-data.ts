@@ -1,12 +1,11 @@
 import { axiOpen, axiToUtc } from '@pt/db/axitime'
-import { MAX_CANDLES, TF_MS, type CandleRow, type ChartTf, type ChartTokens, type ManualZone, type PrevLevels, type Zones } from './chart-shared'
+import { MAX_CANDLES, TF_MS, type CandleRow, type ChartTf, type ChartTokens, type ManualZone, type PrevLevels } from './chart-shared'
 import { db } from './db'
 import { SYMBOL } from './market-data'
 
 export * from './chart-shared'
 
-// Piyasa grafiğinin okumaları: Axi mumları (dilim ve aralıkla), core'un destek/direnç bölgeleri ve önceki
-// gün/hafta seviyeleri. Grafik bunları sayfadan değil API'den okur; sayfa yalnız "değişti mi" işaretlerini taşır
+// Piyasa grafiğinin okumaları: Axi mumları (dilim ve aralıkla), elle zonlar ve önceki gün/hafta seviyeleri. Grafik bunları sayfadan değil API'den okur; sayfa yalnız "değişti mi" işaretlerini taşır
 // (dakikalık yenileme büyük veriyi her seferinde yeniden göndermesin diye).
 
 // before: o andan önce açılmış son n mum; after: o andan sonra açılmış ilk n mum; ikisi de yoksa en yeni n mum.
@@ -62,57 +61,6 @@ export async function loadForming(tf: ChartTf): Promise<CandleRow[]> {
   return out
 }
 
-// Son sürümün geçerli bölgeleri (on beş kadar), hangilerinin gösterileceğiyle. Tablo ya da sütun yoksa (core yeni
-// sürümü henüz kurmadıysa) boş döner.
-export async function loadZones(): Promise<Zones> {
-  const pool = db()
-  try {
-    const { rows: vr } = await pool.query<{ version: string }>(`SELECT version FROM sr_versions ORDER BY created_at DESC LIMIT 1`)
-    const version = vr[0]?.version ?? null
-    if (!version) return { version: null, computedAt: null, zones: [] }
-    const { rows } = await pool.query<{
-      zone_id: number
-      created_at: Date
-      lo: number
-      hi: number
-      score: number
-      score_4h: number
-      score_1d: number
-      score_1w: number
-      touches: number
-      holds: number
-      breaks: number
-      shown: boolean
-      computed_at: Date
-    }>(
-      `SELECT zone_id, created_at, lo, hi, score, score_4h, score_1d, score_1w, touches, holds, breaks, shown,
-              (SELECT max(computed_at) FROM sr_zones WHERE symbol = $1 AND version = $2) AS computed_at
-       FROM sr_zones WHERE symbol = $1 AND version = $2 AND ended_at IS NULL ORDER BY lo`,
-      [SYMBOL, version],
-    )
-    return {
-      version,
-      computedAt: rows[0]?.computed_at?.toISOString() ?? null,
-      zones: rows.map((r) => ({
-        id: r.zone_id,
-        createdAt: r.created_at.getTime(),
-        lo: r.lo,
-        hi: r.hi,
-        score: r.score,
-        mix: [r.score_4h, r.score_1d, r.score_1w],
-        touches: r.touches,
-        holds: r.holds,
-        breaks: r.breaks,
-        shown: r.shown,
-      })),
-    }
-  } catch (err) {
-    const code = (err as { code?: string }).code
-    if (code === '42P01' || code === '42703') return { version: null, computedAt: null, zones: [] } // tablo ya da sütun yok
-    throw err
-  }
-}
-
 // Elle zonlar: şu an geçerli olanların hepsi (Ari'nin çizdiği; zon eklemek ya da kapatmak şimdilik veritabanından).
 const ACTIVE_MANUAL = `created_at <= now() AND (ended_at IS NULL OR ended_at > now())`
 export async function loadManualZones(): Promise<ManualZone[]> {
@@ -154,19 +102,11 @@ export async function loadPrevLevels(now: Date): Promise<PrevLevels> {
 
 export async function loadChartTokens(): Promise<ChartTokens> {
   const pool = db()
-  const [c, z, h, m] = await Promise.all([
+  const [c, h, m] = await Promise.all([
     pool.query<{ t: string | null }>(
       `SELECT (extract(epoch FROM max(open_time)) * 1000)::bigint::text AS t FROM axi_candles WHERE symbol = $1 AND timeframe = '1m'`,
       [SYMBOL],
     ),
-    pool
-      .query<{
-        at: Date | null
-      }>(`SELECT max(computed_at) AS at FROM sr_zones WHERE symbol = $1 AND version = (SELECT version FROM sr_versions ORDER BY created_at DESC LIMIT 1)`, [SYMBOL])
-      .catch((err) => {
-        if ((err as { code?: string }).code === '42P01') return { rows: [{ at: null }] }
-        throw err
-      }),
     pool.query<{ span: '12h' | '24h' | '48h'; id: string | null }>(
       `SELECT s.span, (SELECT id FROM heatmap_snapshots WHERE span = s.span ORDER BY received_at DESC LIMIT 1) AS id
        FROM unnest(ARRAY['12h', '24h', '48h']) AS s(span)`,
@@ -182,5 +122,5 @@ export async function loadChartTokens(): Promise<ChartTokens> {
   ])
   const heat: ChartTokens['heat'] = { '12h': null, '24h': null, '48h': null }
   for (const r of h.rows) heat[r.span] = r.id === null ? null : Number(r.id)
-  return { candle: c.rows[0]?.t ? Number(c.rows[0].t) : null, zones: z.rows[0]?.at?.toISOString() ?? null, manual: m.rows[0]?.k ?? null, heat }
+  return { candle: c.rows[0]?.t ? Number(c.rows[0].t) : null, manual: m.rows[0]?.k ?? null, heat }
 }

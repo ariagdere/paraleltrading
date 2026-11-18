@@ -8,21 +8,6 @@ export const MAX_CANDLES = 2000
 
 export type CandleRow = [number, number, number, number, number] // açılış (ms), o, h, l, c
 
-// Geçerli bir destek/direnç bölgesi (core v3): bant oluştuğu andan beri sabit.
-export type ChartZone = {
-  id: number
-  createdAt: number // bölgenin belirdiği 4h kapanışı
-  lo: number
-  hi: number
-  score: number // güç: bandındaki izlerin bugünkü ağırlığı
-  mix: [number, number, number] // gücün 4h, 1d, 1w izlerinden gelen kısmı
-  touches: number
-  holds: number
-  breaks: number
-  shown: boolean // core'un seçtikleri: fiyatın ±%5'inde üstte ve altta en güçlü 3 ve fiyatın içinde olduğu
-}
-export type Zones = { version: string | null; computedAt: string | null; zones: ChartZone[] }
-
 // Elle zon (elle_zones; Ari'nin çizdiği, SDL v3 elle zon modeli bunlarla işlem yapıyor): şu an geçerli olanlar.
 export type ManualZone = { id: number; lo: number; hi: number; createdAt: number }
 
@@ -33,7 +18,6 @@ export type PrevLevels = {
 
 export type ChartTokens = {
   candle: number | null // son 1m mumunun açılışı: değişince grafik yeni mumları okur
-  zones: string | null // bölgelerin son hesap anı
   manual: string | null // elle zonların değişim işareti (zon eklenince, kapanınca, geçerliliği başlayınca değişir)
   heat: Record<'12h' | '24h' | '48h', number | null> // pencere başına en yeni snapshot
 }

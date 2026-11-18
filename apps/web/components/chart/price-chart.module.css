@@ -87,12 +87,6 @@
   border-top: 2px solid var(--text);
 }
 
-.markZone {
-  border-top: 1.5px solid var(--zone);
-  border-bottom: 1.5px solid var(--zone);
-  background: color-mix(in srgb, var(--zone) 30%, transparent);
-}
-
 .markManual {
   border-top: 1.5px solid var(--manual);
   border-bottom: 1.5px solid var(--manual);
