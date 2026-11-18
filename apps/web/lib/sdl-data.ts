@@ -1,7 +1,9 @@
 import { db } from './db'
 
-// SDL sayfasının verisi: core'un durumu (sdl_status), NO TRADE düğmesi, sağlık satırları, canlı kararlar (emir ve eski
-// sistemdeki kaydıyla: legacy_orders, saatte bir kopyalanıyor), geçmişin tekrarı ve elle zonlar.
+// SDL sayfasının verisi: core'un durumu (sdl_status), NO TRADE düğmesi, sağlık satırları, sırada bekleyen kurulumlar
+// (sdl_pending; core her 3m kapanışında yazar), canlı kararlar (emir ve eski sistemdeki kaydıyla: legacy_orders, saatte
+// bir kopyalanıyor), geçmişin tekrarı ve elle zonlar. Dönüşüm şartından elenen kurulumlar listelenmez (Ari, 18 Kasım);
+// tekrarda yalnız sayısı.
 
 export type SdlStatus = {
   tradingEnabled: boolean
@@ -60,6 +62,36 @@ export type SdlRow = {
   }
 }
 
+export type SdlPending = {
+  side: 'LONG' | 'SHORT'
+  fvgA: Date
+  status: 'tetik' | 'derin' | 'zon'
+  gap: number
+  fvgLo: number
+  fvgHi: number
+  trigger: number
+  ext: number
+  zoneId: number
+  tpZoneId: number
+  entry: number
+  sl: number
+  tp: number
+  rr: number
+  volume: number | null
+  riskUsd: number | null
+  lotError: string | null
+  expiresAt: Date
+}
+
+// core'un yazdığı liste durumu (apps/core/src/sdl/store.ts PendingInfo)
+export type SdlPendingInfo = {
+  durum: 'liste' | 'hafta_sonu' | 'kapali' | 'bias_yok' | 'notr' | 'zon_yok' | 'gun_mumu_yok'
+  bias: string | null
+  close: number | null
+  pencere: boolean
+  haber: { from: number; to: number; at: number[] } | null
+}
+
 export type SdlZone = { id: number; lo: number; hi: number; createdAt: Date; endedAt: Date | null; note: string | null }
 
 export type SdlData = {
@@ -68,8 +100,13 @@ export type SdlData = {
   switchOn: boolean
   switchChangedAt: Date | null
   health: SdlHealth[]
+  pending: SdlPending[]
+  pendingAsOf: Date | null
+  pendingInfo: SdlPendingInfo | null
   live: SdlRow[]
   replay: SdlRow[]
+  replayFlipCount: number
+  replayFirstDay: string | null // dönüşümle elenenler dahil ilk kurulumun günü
   zones: SdlZone[]
 }
 
@@ -127,12 +164,14 @@ const SETUP_COLS = `s.id, s.mode, s.entry_t, s.day, s.side, s.zone_id, s.tp_zone
 
 export async function loadSdl(): Promise<SdlData> {
   const pool = db()
-  const [status, sw, health, live, replay, zones, now] = await Promise.all([
+  const [status, sw, health, pending, live, replay, flips, zones, now] = await Promise.all([
     pool.query(`SELECT * FROM sdl_status WHERE id = 1`),
     pool.query(`SELECT enabled, changed_at FROM trading_switch WHERE strategy = 'sdl_elle'`),
     pool.query(
       `SELECT source, last_source_time, last_success_at, consecutive_failures, last_error, last_error_at FROM collector_status WHERE source LIKE 'sdl:%' ORDER BY source`,
     ),
+    // 011 uygulanmadan açılan web (deploy sırasında birkaç saniye) sayfayı düşürmesin
+    pool.query(`SELECT * FROM sdl_pending ORDER BY fvg_a DESC`).catch(() => ({ rows: [] as any[] })),
     pool.query(
       `SELECT ${SETUP_COLS}, o.status AS o_status, o.volume AS o_volume, o.risk_usd AS o_risk_usd, o.mt5_position_id AS o_position_id,
               o.fill_price AS o_fill, o.trade_code AS o_code, o.trade_message AS o_message, o.error AS o_error,
@@ -144,11 +183,14 @@ export async function loadSdl(): Promise<SdlData> {
          SELECT lo.status, lo.closed_at, lo.data FROM legacy_orders lo
          WHERE o.mt5_position_id IS NOT NULL AND lo.data->>'mt5_position_id' = o.mt5_position_id ORDER BY lo.id DESC LIMIT 1
        ) l ON true
-       WHERE s.mode = 'canli' AND s.entry_t > now() - $1::interval
+       WHERE s.mode = 'canli' AND s.entry_t > now() - $1::interval AND s.reason IS DISTINCT FROM 'donusum'
        ORDER BY s.entry_t DESC`,
       [`${LIVE_DAYS} days`],
     ),
-    pool.query(`SELECT ${SETUP_COLS} FROM sdl_setups s WHERE s.mode = 'tekrar' ORDER BY s.entry_t DESC`),
+    pool.query(`SELECT ${SETUP_COLS} FROM sdl_setups s WHERE s.mode = 'tekrar' AND s.reason IS DISTINCT FROM 'donusum' ORDER BY s.entry_t DESC`),
+    pool.query<{ n: string; first: string | null }>(
+      `SELECT count(*) FILTER (WHERE reason = 'donusum') AS n, min(day)::text AS first FROM sdl_setups WHERE mode = 'tekrar'`,
+    ),
     pool.query(`SELECT id, lo, hi, created_at, ended_at, note FROM elle_zones ORDER BY lo DESC`),
     pool.query<{ now: Date }>('SELECT now() AS now'),
   ])
@@ -179,8 +221,32 @@ export async function loadSdl(): Promise<SdlData> {
       lastError: r.last_error,
       lastErrorAt: r.last_error_at,
     })),
+    pending: pending.rows.map((r) => ({
+      side: r.side,
+      fvgA: r.fvg_a,
+      status: r.status,
+      gap: r.gap,
+      fvgLo: r.fvg_lo,
+      fvgHi: r.fvg_hi,
+      trigger: r.trigger,
+      ext: r.ext,
+      zoneId: r.zone_id,
+      tpZoneId: r.tp_zone_id,
+      entry: r.entry,
+      sl: r.sl,
+      tp: r.tp,
+      rr: r.rr,
+      volume: r.volume,
+      riskUsd: r.risk_usd,
+      lotError: r.lot_error,
+      expiresAt: r.expires_at,
+    })),
+    pendingAsOf: st?.pending_as_of ?? null,
+    pendingInfo: st?.pending_info ?? null,
     live: live.rows.map(toRow),
     replay: replay.rows.map(toRow),
+    replayFlipCount: Number(flips.rows[0]?.n ?? 0),
+    replayFirstDay: flips.rows[0]?.first ?? null,
     zones: zones.rows.map((r) => ({ id: r.id, lo: r.lo, hi: r.hi, createdAt: r.created_at, endedAt: r.ended_at, note: r.note })),
   }
 }

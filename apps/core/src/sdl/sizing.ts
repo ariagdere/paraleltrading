@@ -15,6 +15,9 @@ export type Spec = {
   point: number
 }
 
+// Sembol bilgisi yokken benzetim ve bekleyen listesi için (emir kapısı bunu kullanmaz, sembol bilgisi ister).
+export const DEFAULT_SPEC: Spec = { contractSize: 1, minVolume: 0.01, maxVolume: 100, volumeStep: 0.01, stopsLevel: 0, point: 0.01 }
+
 export type SizingInput = {
   side: Side
   bid: number

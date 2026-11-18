@@ -1,7 +1,7 @@
 // sdl_setups satırları: canlı kararlar ve geçmişin yeniden oynatması aynı biçimde.
 
 import type { Pool, PoolClient } from 'pg'
-import type { Candidate, Exit } from './engine.js'
+import type { Candidate, Exit, Pending } from './engine.js'
 
 export type Reason = 'hafta_sonu' | 'donusum' | 'haber' | 'lot' | 'golge' | 'no_trade' | 'gec' | 'belirsiz_emir' | 'emir_hatasi'
 
@@ -43,6 +43,48 @@ export async function insertSetup(db: Pool | PoolClient, w: SetupWrite): Promise
     values(w),
   )
   return rows[0] ? Number(rows[0].id) : null
+}
+
+// Sırada bekleyen kurulumlar (sdl_pending): her 3m kapanışında baştan yazılır; durum sdl_status.pending_*'da.
+export type PendingWrite = { p: Pending; volume: number | null; riskUsd: number | null; lotError: string | null }
+
+export type PendingInfo = {
+  // liste: hesaplandı (boş olabilir); öbürleri listenin neden hesaplanmadığı
+  durum: 'liste' | 'hafta_sonu' | 'kapali' | 'bias_yok' | 'notr' | 'zon_yok' | 'gun_mumu_yok'
+  bias: string | null
+  close: number | null // son 3m kapanışı (bid)
+  pencere: boolean // sonraki kapanış 07:00–20:00 içinde
+  haber: { from: number; to: number; at: number[] } | null // sonraki kapanışı kapsayan ya da 20:00'den önce başlayan ilk haber engeli
+}
+
+const PENDING_COLUMNS = [
+  'side', 'fvg_a', 'day', 'status', 'fvg_i', 'gap', 'fvg_lo', 'fvg_hi', 'trigger', 'ext', 'ext_t', 'zone_id', 'tp_zone_id',
+  'entry', 'sl', 'tp', 'risk', 'rr', 'volume', 'risk_usd', 'lot_error', 'expires_at', 'as_of',
+] as const
+
+export async function replacePending(pool: Pool, asOf: number, info: PendingInfo, ws: PendingWrite[]): Promise<void> {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query('DELETE FROM sdl_pending')
+    if (ws.length > 0) {
+      const n = PENDING_COLUMNS.length
+      await client.query(
+        `INSERT INTO sdl_pending (${PENDING_COLUMNS.join(', ')}) VALUES ${ws.map((_, k) => `(${PENDING_COLUMNS.map((_, i) => `$${k * n + i + 1}`).join(', ')})`).join(', ')}`,
+        ws.flatMap(({ p, volume, riskUsd, lotError }) => [
+          p.side, new Date(p.fvgA), p.day, p.status, new Date(p.fvgI), p.gap, p.fvgLo, p.fvgHi, p.trigger, p.ext, new Date(p.extT), p.zone.id,
+          p.tpZone.id, p.entry, p.sl, p.tp, p.risk, p.rr, volume, riskUsd, lotError, new Date(p.expiresAt), new Date(asOf),
+        ]),
+      )
+    }
+    await client.query('UPDATE sdl_status SET pending_as_of = $1, pending_info = $2 WHERE id = 1', [new Date(asOf), JSON.stringify(info)])
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 // Tekrar satırlarını baştan yazar (tek transaction). Tekrar satırlarına emir bağlanmaz.

@@ -3,19 +3,22 @@
 // öncekiler collector'ın resmi mumlarından (axi_candles; akışta olup resmide olmayan dakika akıştan). Akış yoksa ya da
 // bayatsa hepsi resmi mumlardan: o zaman karar collector'ın turunu bekler (kapanıştan ~5–15 sn sonra).
 // Kapanan mumun son dakikası 60 sn içinde hiçbir kaynaktan gelmezse o kapanış atlanır (sağlık sayfasında hata).
-// Hafta sonu ve pencere dışında (07:00–20:00 İstanbul) ya da günün bias'ı LONG/SHORT değilse veritabanına bakılmaz.
+// Kurulum yalnız hafta içi 07:00–20:00 (İstanbul) kapanışlarında, günün bias'ı LONG/SHORT iken aranır.
+// Kararın ardından sırada bekleyen kurulumlar (sdl_pending) yazılır: bias geldikten sonra 07:00'den önce de (o saatten
+// önceki dönüş işlem açmaz); hafta sonu, 20:00'den sonra ve bias yokken liste boş, sebebiyle.
 // Dönüşüm şartı için 4h mumları resmi; son kapanan 4h mumu kapanışından 5 dk geçmediyse 1m'lerden kurulur (resmi
 // mum kapanıştan sonra bir kez daha çekiliyor, ilk hali eksik olabilir).
 
 import { axiOpen } from '@pt/db/axitime'
 import { logRun, markFail, markOk, type Pool } from '@pt/db'
 import type { SdlConfig } from './config.js'
-import { load4h, loadBias, loadDailyDays, loadM1, loadNews, loadZones } from './data.js'
+import { load4h, loadBias, loadDailyDays, loadM1, loadNews, loadSpec, loadZones } from './data.js'
 import {
-  DAY, H, H4, M3, MIN, SDL, build3, candidateAt, istDay, istDayStart, istWeekday, prevDay, verdict, wilderAtr, zoneBreaks,
-  type Bar, type Bar4, type Zone,
+  DAY, H, H4, M3, MIN, SDL, build3, candidateAt, istDay, istDayStart, istWeekday, nextNewsBlock, pendingAt, prevDay, verdict,
+  wilderAtr, zoneBreaks, type Bar, type Bar4, type Break, type DayContext, type Pending, type Zone,
 } from './engine.js'
-import type { SetupWrite } from './store.js'
+import { DEFAULT_SPEC, computeSizing, type Spec } from './sizing.js'
+import { replacePending, type PendingInfo, type PendingWrite, type SetupWrite } from './store.js'
 import type { PriceStream } from './stream.js'
 import type { Trader } from './trader.js'
 
@@ -23,9 +26,13 @@ const START_GRACE_MS = 1_000 // akış dakikanın mumunu en geç 1,5 sn'de kapat
 const GIVE_UP_MS = 60_000
 const RETRY_MS = 2_000
 const ZONES_TTL_MS = 60_000
+const SPEC_TTL_MS = 10 * 60_000
 const ATR_WARMUP_MS = 60 * DAY
 
 const hhmm = (t: number) => new Date(t + 3 * H).toISOString().slice(11, 16)
+
+// Kapanıştan sonra sırada bekleyenler: 'bekle' veri bekleniyor; 'tamam' kapanış bitti, liste olduğu gibi kalır.
+type Snapshot = { info: PendingInfo; rows: PendingWrite[] }
 
 export class SdlLive {
   private lastT: number
@@ -34,6 +41,7 @@ export class SdlLive {
   private resolver: NodeJS.Timeout | undefined
   private running: Promise<void> | null = null
   private zonesCache: { at: number; list: Zone[] } | null = null
+  private specCache: { at: number; spec: Spec } | null = null
 
   constructor(
     private pool: Pool,
@@ -113,19 +121,32 @@ export class SdlLive {
 
   // true: bu kapanış bitti (karar verildi ya da yapılacak bir şey yok); false: veri bekleniyor.
   private async evaluate(T: number, now: number): Promise<boolean> {
+    const out = await this.decide(T, now)
+    if (out === 'bekle') return false
+    await this.ok(T)
+    if (out !== 'tamam') {
+      await replacePending(this.pool, T, out.info, out.rows).catch((err) =>
+        console.error(`[sdl] ${hhmm(T)} kapanışının bekleyen listesi yazılamadı: ${(err as Error).message}`),
+      )
+    }
+    return true
+  }
+
+  private async decide(T: number, now: number): Promise<Snapshot | 'bekle' | 'tamam'> {
     const wall0 = Date.now()
     const day = istDay(T - M3)
     const D0 = istDayStart(day)
-    if (T < D0 + SDL.winFrom * H || T > D0 + SDL.winTo * H || istWeekday(T) >= 6) {
-      await this.ok(T)
-      return true
-    }
+    const empty = (durum: PendingInfo['durum'], bias: string | null = null): Snapshot => ({
+      info: { durum, bias, close: null, pencere: false, haber: null },
+      rows: [],
+    })
+    if (istWeekday(T) >= 6) return empty('hafta_sonu')
+    if (T > D0 + SDL.winTo * H) return empty('kapali')
     const reps = (await loadBias(this.pool, day, day)).get(day) ?? []
     const last = reps.filter((r) => r.at <= T).at(-1)
-    if (!last || (last.bias !== 'LONG' && last.bias !== 'SHORT')) {
-      await this.ok(T)
-      return true
-    }
+    if (!last) return empty('bias_yok')
+    if (last.bias !== 'LONG' && last.bias !== 'SHORT') return empty('notr', last.bias)
+    const inWindow = T >= D0 + SDL.winFrom * H
 
     const byT = new Map<number, Bar>()
     for (const b of await loadM1(this.pool, this.symbol, D0, T)) byT.set(b.t, b)
@@ -138,55 +159,86 @@ export class SdlLive {
       for (const [t, b] of this.stream.bars(D0, T - 2 * MIN)) if (!byT.has(t)) byT.set(t, b)
     }
     if (!byT.has(T - MIN)) {
-      if (now < T + GIVE_UP_MS) return false
+      if (now < T + GIVE_UP_MS) return 'bekle'
+      if (!inWindow) return 'tamam' // 07:00'den önce: yalnız bekleyen listesi bu kapanışta güncellenmez
       throw new Error(`${hhmm(T)} kapanışının son 1m mumu 60 sn içinde gelmedi (akış ${this.stream?.state ?? 'yok'})`)
     }
 
     const c3 = build3([...byT.values()].sort((a, b) => a.t - b.t))
     const j = c3.length - 1
-    if (j < 2 || c3[j]!.t !== T - M3) {
-      await this.ok(T)
-      return true
-    }
+    if (j < 2 || c3[j]!.t !== T - M3) return 'tamam'
     const zones = await this.zones()
-    if (zones.length === 0) {
-      await this.ok(T)
-      return true
-    }
+    if (zones.length === 0) return empty('zon_yok', last.bias)
     // Araştırmadaki gibi: önceki günün günlük mumu yoksa gün taranmaz.
-    if (!(await loadDailyDays(this.pool, this.symbol, D0 - 3 * DAY)).has(prevDay(day))) {
-      await this.ok(T)
-      return true
+    if (!(await loadDailyDays(this.pool, this.symbol, D0 - 3 * DAY)).has(prevDay(day))) return empty('gun_mumu_yok', last.bias)
+    const ctx: DayContext = { day, c3, zones, bias: reps }
+    const breaksAt = async () => {
+      const c4 = await this.fourHours(T, zones, now)
+      const atr = wilderAtr(c4)
+      return new Map(zones.map((z) => [z.id, zoneBreaks(z, c4, atr, T)]))
     }
-    const c = candidateAt({ day, c3, zones, bias: reps }, j)
-    if (!c) {
-      await this.ok(T)
-      return true
+    let breaks: Map<number, Break[]> | null = null
+    let news: number[] | null = null
+
+    const c = inWindow ? candidateAt(ctx, j) : null
+    if (c) {
+      breaks = await breaksAt()
+      news = await loadNews(this.pool, T - DAY, T + DAY)
+      const v = verdict(c, breaks, news)
+      const base: SetupWrite = {
+        mode: 'canli',
+        c,
+        decision: v.ok ? 'emir' : 'atla',
+        reason: v.ok ? null : v.reason,
+        detail: v.ok ? null : (v.detail ?? null),
+        bars: fromStream ? 'akis' : 'resmi',
+        volume: null,
+        riskUsd: null,
+        exit: null,
+        r: null,
+      }
+      console.log(
+        `[sdl] kurulum ${hhmm(T)} ${c.side} #${c.zone.id} → #${c.tpZone.id}, giriş ${c.entry.toFixed(2)}, SL ${c.sl.toFixed(2)}, TP ${c.tp.toFixed(2)}: ${v.ok ? 'kurallardan geçti' : v.reason}`,
+      )
+      await this.trader.handle(base, now + (Date.now() - wall0)) // veri okumalarının süresi de gecikmeye sayılır
     }
 
-    const c4 = await this.fourHours(T, zones, now)
-    const atr = wilderAtr(c4)
-    const breaks = new Map(zones.map((z) => [z.id, zoneBreaks(z, c4, atr, T)]))
-    const news = await loadNews(this.pool, T - DAY, T + DAY)
-    const v = verdict(c, breaks, news)
-    const base: SetupWrite = {
-      mode: 'canli',
-      c,
-      decision: v.ok ? 'emir' : 'atla',
-      reason: v.ok ? null : v.reason,
-      detail: v.ok ? null : (v.detail ?? null),
-      bars: fromStream ? 'akis' : 'resmi',
-      volume: null,
-      riskUsd: null,
-      exit: null,
-      r: null,
+    // Sırada bekleyenler (emirden sonra; hata kararı bozmaz, liste bir önceki haliyle kalır)
+    try {
+      breaks ??= await breaksAt()
+      news ??= await loadNews(this.pool, T - DAY, T + DAY)
+      const closing = T + M3 > D0 + SDL.winTo * H
+      const spec = await this.spec()
+      return {
+        info: {
+          durum: closing ? 'kapali' : 'liste',
+          bias: last.bias,
+          close: c3[j]!.c,
+          pencere: T + M3 >= D0 + SDL.winFrom * H && !closing,
+          haber: closing ? null : nextNewsBlock(news, T + M3, D0 + SDL.winTo * H),
+        },
+        rows: closing ? [] : pendingAt(ctx, j, breaks).map((p) => this.sized(p, spec)),
+      }
+    } catch (err) {
+      console.error(`[sdl] ${hhmm(T)} kapanışının bekleyen listesi hesaplanamadı: ${(err as Error).message}`)
+      return 'tamam'
     }
-    console.log(
-      `[sdl] kurulum ${hhmm(T)} ${c.side} #${c.zone.id} → #${c.tpZone.id}, giriş ${c.entry.toFixed(2)}, SL ${c.sl.toFixed(2)}, TP ${c.tp.toFixed(2)}: ${v.ok ? 'kurallardan geçti' : v.reason}`,
-    )
-    await this.trader.handle(base, now + (Date.now() - wall0)) // veri okumalarının süresi de gecikmeye sayılır
-    await this.ok(T)
-    return true
+  }
+
+  // Bekleyen kurulumun lotu ve riski, girişin tetik seviyesinde olacağı varsayımıyla (bid tetik, ask tetik + spread).
+  private sized(p: Pending, spec: Spec): PendingWrite {
+    const sz = computeSizing({
+      side: p.side, bid: p.trigger, ask: p.trigger + p.spread, sl: p.sl, tp: p.tp, riskUsd: this.cfg.riskUsd,
+      minLotMaxRiskUsd: this.cfg.minLotMaxRiskUsd, maxVolume: this.cfg.maxVolume, spec,
+    })
+    return sz.ok ? { p, volume: sz.volume, riskUsd: sz.riskUsd, lotError: null } : { p, volume: null, riskUsd: null, lotError: sz.error }
+  }
+
+  private async spec(): Promise<Spec> {
+    if (!this.specCache || Date.now() - this.specCache.at > SPEC_TTL_MS) {
+      this.specCache = { at: Date.now(), spec: (await loadSpec(this.pool, this.symbol).catch(() => null)) ?? DEFAULT_SPEC }
+    }
+    return this.specCache.spec
   }
 
   // 4h mumları (ATR ısınması için zonlardan 60 gün önceden); son kapanan mum kapanışından 5 dk geçmediyse 1m'lerden.

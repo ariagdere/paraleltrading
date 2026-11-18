@@ -3,14 +3,18 @@ import { connection } from 'next/server'
 import { AutoRefresh } from '@/components/AutoRefresh'
 import { loadSdl, type SdlData, type SdlRow } from '@/lib/sdl-data'
 import { clock, span } from '@/lib/time'
+import { ChartRow, RowToggle } from './ChartRow'
 import s from './sdl.module.css'
 
 export const metadata: Metadata = { title: 'SDL' }
 
 // SDL v3, elle zonlar: core her 3m kapanışında kurulum arar ve kural kararını yazar; emir Railway'deki anahtar
 // (SDL_TRADING_ENABLED) ve bu sayfadaki NO TRADE düğmesi açıksa gider (magic 15033; eski sistemin /live ekranında
-// "SDL_v3 - Manuel Zone No Cap"). Geçmişin tekrarı aynı kurallarla saatte bir.
+// "SDL_v3 - Manuel Zone No Cap"). Geçmişin tekrarı aynı kurallarla saatte bir. Sırada bekleyen kurulumlar (dönüş
+// bekleyen iFVG'ler) her 3m kapanışında; satıra tıklayınca kurulumun grafiği (3m ve 15m, araştırma sayfasındaki gibi).
+// Dönüşüm şartından elenen kurulumlar listelenmez.
 
+const fmt0 = new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 0 })
 const fmt2 = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtLot = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const signed = (v: number, unit = '') => `${v > 0 ? '+' : v < 0 ? '−' : ''}${fmt2.format(Math.abs(v))}${unit}`
@@ -32,6 +36,14 @@ const NOTICE: Record<string, string> = {
   acildi: 'Düğme açıldı: Railway anahtarı da açıksa bir sonraki kurulumda emir gider.',
   kapandi: 'NO TRADE: yeni işlem açılmaz; açık işlemler SL/TP’leriyle sürüyor.',
   hata: 'Düğme değiştirilemedi; sayfayı yenileyip tekrar dene.',
+}
+const PENDING_EMPTY: Record<string, string> = {
+  hafta_sonu: 'Hafta sonu: işlem yok.',
+  kapali: 'Pencere 20:00’de kapandı; yeni liste yarın bias geldikten sonra (06:45).',
+  bias_yok: 'Günün bias raporu henüz gelmedi (rutin 06:45’te çalışıyor).',
+  notr: 'Günün bias’ı LONG ya da SHORT değil: kurulum aranmıyor.',
+  zon_yok: 'Geçerli elle zon yok.',
+  gun_mumu_yok: 'Önceki günün günlük mumu yok: gün taranmıyor.',
 }
 const STREAM: Record<string, string> = { ready: 'bağlı', connecting: 'bağlanıyor', error: 'hata', off: 'kapalı (MetaApi değişkenleri yok)' }
 
@@ -135,6 +147,8 @@ export default async function SdlPage({ searchParams }: Props) {
         </dl>
       </header>
 
+      <Pending d={d} />
+
       <section className={s.section} aria-labelledby="canli">
         <h2 id="canli" className={s.h2}>
           Canlı kararlar, son 14 gün
@@ -142,17 +156,17 @@ export default async function SdlPage({ searchParams }: Props) {
         {d.live.length === 0 ? (
           <p className={s.muted}>Henüz kurulum yok.</p>
         ) : (
-          <div className={s.scroll}>
-            <Table rows={d.live} now={now} live />
+          <div className={s.scroll} data-scroll>
+            <Table rows={d.live} now={now} stamp={d.pendingAsOf ? new Date(d.pendingAsOf).getTime() : 0} live />
           </div>
         )}
         <p className={s.note}>
           Sonuç eski sistemin kaydından (saatte bir kopyalanıyor); R = gerçekleşen kâr / (|dolum − SL| × lot). Benzetim: aynı SL/TP’yle resmi 1m mumlarında ne
-          olurdu.
+          olurdu. Satıra tıklayınca grafik.
         </p>
       </section>
 
-      <Replay rows={d.replay} now={now} />
+      <Replay rows={d.replay} flips={d.replayFlipCount} first={d.replayFirstDay} now={now} />
 
       <section className={s.section} aria-labelledby="zonlar">
         <h2 id="zonlar" className={s.h2}>
@@ -207,7 +221,7 @@ function reasonText(r: SdlRow): string {
   return base
 }
 
-function Table({ rows, now, live }: { rows: SdlRow[]; now: Date; live?: boolean }) {
+function Table({ rows, now, live, stamp = 0 }: { rows: SdlRow[]; now: Date; live?: boolean; stamp?: number }) {
   return (
     <table className={s.table}>
       <thead>
@@ -237,9 +251,9 @@ function Table({ rows, now, live }: { rows: SdlRow[]; now: Date; live?: boolean 
       </thead>
       <tbody>
         {rows.map((r) => (
-          <tr key={r.id}>
+          <ChartRow key={r.id} query={`kurulum=${r.id}`} cols={live ? 11 : 10} stamp={r.simExitAt ? 0 : stamp}>
             <th scope="row" className="num">
-              {clock(new Date(r.entryT), now)}
+              <RowToggle label={`${clock(new Date(r.entryT), now)} ${r.side === 'LONG' ? 'long' : 'short'} kurulumu`}>{clock(new Date(r.entryT), now)}</RowToggle>
               {live && r.bars && <span className={s.sub}>{r.bars === 'akis' ? 'fiyat akışı' : 'resmi mumlar'}</span>}
             </th>
             <td className={r.side === 'LONG' ? s.long : s.short}>{r.side === 'LONG' ? '↑ Long' : '↓ Short'}</td>
@@ -269,7 +283,7 @@ function Table({ rows, now, live }: { rows: SdlRow[]; now: Date; live?: boolean 
                 <span className={s.muted}>açık</span>
               )}
             </td>
-          </tr>
+          </ChartRow>
         ))}
       </tbody>
     </table>
@@ -313,7 +327,7 @@ function OrderCell({ r, now }: { r: SdlRow; now: Date }) {
   )
 }
 
-function Replay({ rows, now }: { rows: SdlRow[]; now: Date }) {
+function Replay({ rows, flips, first, now }: { rows: SdlRow[]; flips: number; first: string | null; now: Date }) {
   const trades = rows.filter((r) => r.decision === 'emir')
   const closed = trades.filter((r) => r.simExitKind !== null && r.simR !== null).sort((a, b) => +new Date(a.simExitAt!) - +new Date(b.simExitAt!))
   let cum = 0
@@ -327,7 +341,6 @@ function Replay({ rows, now }: { rows: SdlRow[]; now: Date }) {
     dollars += r.simR! * (r.riskUsd ?? 0)
   }
   const wins = closed.filter((r) => r.simExitKind === 'TP').length
-  const first = rows.length ? rows[rows.length - 1]!.day : null
   const skipped = new Map<string, number>()
   for (const r of rows) if (r.decision === 'atla') skipped.set(r.reason ?? '?', (skipped.get(r.reason ?? '?') ?? 0) + 1)
   return (
@@ -335,26 +348,140 @@ function Replay({ rows, now }: { rows: SdlRow[]; now: Date }) {
       <h2 id="tekrar" className={s.h2}>
         Geçmişin tekrarı{first ? `, ${first.slice(8, 10)}.${first.slice(5, 7)}’den bu yana` : ''}
       </h2>
-      {rows.length === 0 ? (
+      {rows.length === 0 && flips === 0 ? (
         <p className={s.muted}>Henüz tekrar yok; core açılışta ve saatte bir hesaplar.</p>
       ) : (
         <>
           <p className={s.summary}>
-            {rows.length} kurulumdan {trades.length} işlem
+            {trades.length} işlem
             {closed.length < trades.length ? ` (${trades.length - closed.length} açık)` : ''}: {wins} hedef, {closed.length - wins} stop, toplam{' '}
             <strong className={cum >= 0 ? s.tp : s.sl}>{signed(cum, ' R')}</strong>, en büyük düşüş {fmt2.format(dd)} R; {fmt2.format(10)} $ riskle {usd(dollars)}.
             {skipped.size > 0 &&
               ` Elenen: ${[...skipped.entries()].map(([k, n]) => `${n} ${REASON[k] ?? k}`).join(', ')}.`}
+            {flips > 0 && ` Dönüşüm şartından elenen ${flips} kurulum listelenmiyor.`}
           </p>
-          <div className={s.scroll}>
-            <Table rows={rows} now={now} />
-          </div>
+          {rows.length > 0 && (
+            <div className={s.scroll} data-scroll>
+              <Table rows={rows} now={now} />
+            </div>
+          )}
           <p className={s.note}>
             Aynı kurallar resmi mumlarla; bias raporu üretildiği andan geçerli (canlıda rapor tabloya düştüğü anda). Lot en son sembol bilgisiyle, giriş anındaki
-            kapanış ve spread’le.
+            kapanış ve spread’le. Satıra tıklayınca grafik.
           </p>
         </>
       )}
+    </section>
+  )
+}
+
+function newsText(h: { from: number; to: number; at: number[] }, now: Date): string {
+  const at = h.at.map((t) => clock(new Date(t), now))
+  const ev = at.length > 1 ? `${at.slice(0, -1).join(', ')} ve ${at.at(-1)} haberleri` : `${at[0]} haberi`
+  return now.getTime() >= h.from
+    ? ` Haber engeli ${clock(new Date(h.to), now)}’e kadar (${ev}): bu arada bir dönüş işlem açmaz ve kurulumu düşürür.`
+    : ` Haber engeli ${clock(new Date(h.from), now)}–${clock(new Date(h.to), now)} (${ev}): o aralıkta bir dönüş işlem açmaz ve kurulumu düşürür.`
+}
+
+function Pending({ d }: { d: SdlData }) {
+  const { now, pendingInfo: info } = d
+  const asOf = d.pendingAsOf ? new Date(d.pendingAsOf) : null
+  const close = info?.durum === 'liste' ? info.close : null
+  // Fiyata en yakın tetik başta
+  const rows = [...d.pending].sort((a, b) => (close !== null ? Math.abs(a.trigger - close) - Math.abs(b.trigger - close) : 0))
+  const stamp = asOf ? asOf.getTime() : 0
+  return (
+    <section className={s.section} aria-labelledby="sirada">
+      <h2 id="sirada" className={s.h2}>
+        Sırada bekleyen kurulumlar
+      </h2>
+      {!asOf || !info ? (
+        <p className={s.muted}>Henüz liste yok; core her 3m kapanışında yazar.</p>
+      ) : (
+        <p className={s.summary}>
+          {clock(asOf, now)} kapanışına göre{info.bias ? `, bias ${info.bias}` : ''}
+          {close !== null ? `, son kapanış ${fmt2.format(close)}` : ''}.{' '}
+          {info.durum !== 'liste'
+            ? (PENDING_EMPTY[info.durum] ?? info.durum)
+            : rows.length === 0
+              ? 'Bekleyen yok: bias yönünde dönmemiş, en az 50 $’lık bir FVG yok (ya da zonu dönüşüm şartından geçmiyor).'
+              : `${rows.length} FVG dönüş bekliyor: bir 3m kapanışı tetiği geçerse giriş.`}
+          {info.durum === 'liste' && !info.pencere && ' Pencere 07:00’de açılır: o saatten önceki bir dönüş işlem açmaz ve kurulumu düşürür.'}
+          {info.durum === 'liste' && info.haber && newsText(info.haber, now)}
+          {now.getTime() - asOf.getTime() > 10 * 60_000 && <span className={s.warn}>Liste 10 dakikadır güncellenmedi.</span>}
+        </p>
+      )}
+      {rows.length > 0 && (
+        <div className={s.scroll} data-scroll>
+          <table className={s.table}>
+            <thead>
+              <tr>
+                <th scope="col">FVG</th>
+                <th scope="col">Yön</th>
+                <th scope="col">Tetik: 3m kapanışı</th>
+                <th scope="col" className={s.r}>
+                  Uzaklık
+                </th>
+                <th scope="col">Zon</th>
+                <th scope="col" className={s.r}>
+                  SL ≈
+                </th>
+                <th scope="col" className={s.r}>
+                  TP
+                </th>
+                <th scope="col" className={s.r}>
+                  R:R ≈
+                </th>
+                <th scope="col" className={s.r}>
+                  Lot · risk
+                </th>
+                <th scope="col">En geç</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((p) => {
+                const S = p.side === 'SHORT'
+                const key = `${p.side}-${new Date(p.fvgA).getTime()}`
+                const t = clock(new Date(p.fvgA), now)
+                return (
+                  <ChartRow key={key} query={`bekleyen=${key}`} cols={10} stamp={stamp}>
+                    <th scope="row" className="num">
+                      <RowToggle label={`${t} FVG’si`}>{t}</RowToggle>
+                      <span className={s.sub}>boşluk {fmt0.format(p.gap)} $</span>
+                    </th>
+                    <td className={S ? s.short : s.long}>{S ? '↓ Short' : '↑ Long'}</td>
+                    <td className={`num ${s.reason}`}>
+                      {S ? '<' : '>'} {fmt2.format(p.trigger)}
+                      {p.status === 'derin' && (
+                        <span className={s.sub}>
+                          derin kapanış: FVG’nin kenarı {fmt2.format(S ? p.fvgLo : p.fvgHi)}; arada kapanırsa kurulum düşer
+                        </span>
+                      )}
+                      {p.status === 'zon' && <span className={s.sub}>önce fiyat #{p.zoneId}’e ulaşmalı</span>}
+                    </td>
+                    <td className={`num ${s.r}`}>{close !== null ? `${fmt0.format(Math.abs(close - p.trigger))} $` : '—'}</td>
+                    <td className="num">
+                      #{p.zoneId} → #{p.tpZoneId}
+                    </td>
+                    <td className={`num ${s.r}`}>{fmt2.format(p.sl)}</td>
+                    <td className={`num ${s.r}`}>{fmt2.format(p.tp)}</td>
+                    <td className={`num ${s.r}`}>1:{fmt2.format(p.rr)}</td>
+                    <td className={`num ${s.r} ${s.reason}`}>
+                      {p.volume !== null ? `${fmtLot.format(p.volume)} · ${fmt2.format(p.riskUsd ?? 0)} $` : <span className={s.warn}>işlem yok: {p.lotError}</span>}
+                    </td>
+                    <td className="num">{clock(new Date(p.expiresAt), now)}</td>
+                  </ChartRow>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className={s.note}>
+        Bias yönünde, henüz dönmemiş, en az 50 $’lık iFVG’ler; giriş zonu dönüşüm şartından geçenler. Değerler girişin tetikte olacağı varsayımıyla: SL şimdiye
+        kadarki iğneden (fiyat ilerlerse SL, R:R ve lot değişir), TP o girişin ötesindeki ilk zondan. Aynı kapanış birden çok FVG’yi döndürürse en son oluşan
+        alınır. Liste her 3m kapanışında yenilenir; satıra tıklayınca grafik.
+      </p>
     </section>
   )
 }
