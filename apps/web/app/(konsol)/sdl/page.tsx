@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: 'SDL' }
 // (SDL_TRADING_ENABLED) ve bu sayfadaki NO TRADE düğmesi açıksa gider (magic 15033; eski sistemin /live ekranında
 // "SDL_v3 - Manuel Zone No Cap"). Geçmişin tekrarı aynı kurallarla saatte bir. Sırada bekleyen kurulumlar (dönüş
 // bekleyen iFVG'ler) her 3m kapanışında; satıra tıklayınca kurulumun grafiği (3m ve 15m, araştırma sayfasındaki gibi).
-// Dönüşüm şartından elenen kurulumlar listelenmez.
+// Dönüşüm şartından elenen kurulumlar listelenmez; sayfada dönüşüm şartıyla ilgili açıklama yok (Ari, 18 Kasım: net bir kural).
 
 const fmt0 = new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 0 })
 const fmt2 = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -98,8 +98,8 @@ export default async function SdlPage({ searchParams }: Props) {
           </form>
         </div>
         <p className={s.lead}>
-          SDL v3, elle çizilen zonlarla: hafta içi 07:00–20:00, günün bias yönünde 3m iFVG dönüşü; SL iğne ± 15 $, TP sonraki zonun 15 $ önü; giriş zonu dönüşüm
-          zonu olmalı; haberden 1 saat önce dur, 30 dk sonra başla. İşlem sınırı ve 3 kayıp kuralı yok. Risk{' '}
+          SDL v3, elle çizilen zonlarla: hafta içi 07:00–20:00, günün bias yönünde 3m iFVG dönüşü; SL iğne ± 15 $, TP sonraki zonun 15 $ önü; haberden 1 saat
+          önce dur, 30 dk sonra başla. İşlem sınırı ve 3 kayıp kuralı yok. Risk{' '}
           {status ? `${fmt2.format(status.riskUsd)} $` : '10 $'} (lot aşağı yuvarlanır; en küçük lotta en çok{' '}
           {status ? `${fmt2.format(status.minLotMaxRiskUsd)} $` : '20 $'}), magic {status?.magic ?? 15033}; eski sistemin /live ekranında “SDL_v3 - Manuel Zone No
           Cap”.
@@ -166,7 +166,7 @@ export default async function SdlPage({ searchParams }: Props) {
         </p>
       </section>
 
-      <Replay rows={d.replay} flips={d.replayFlipCount} first={d.replayFirstDay} now={now} />
+      <Replay rows={d.replay} first={d.replayFirstDay} now={now} />
 
       <section className={s.section} aria-labelledby="zonlar">
         <h2 id="zonlar" className={s.h2}>
@@ -327,7 +327,7 @@ function OrderCell({ r, now }: { r: SdlRow; now: Date }) {
   )
 }
 
-function Replay({ rows, flips, first, now }: { rows: SdlRow[]; flips: number; first: string | null; now: Date }) {
+function Replay({ rows, first, now }: { rows: SdlRow[]; first: string | null; now: Date }) {
   const trades = rows.filter((r) => r.decision === 'emir')
   const closed = trades.filter((r) => r.simExitKind !== null && r.simR !== null).sort((a, b) => +new Date(a.simExitAt!) - +new Date(b.simExitAt!))
   let cum = 0
@@ -348,7 +348,7 @@ function Replay({ rows, flips, first, now }: { rows: SdlRow[]; flips: number; fi
       <h2 id="tekrar" className={s.h2}>
         Geçmişin tekrarı{first ? `, ${first.slice(8, 10)}.${first.slice(5, 7)}’den bu yana` : ''}
       </h2>
-      {rows.length === 0 && flips === 0 ? (
+      {first === null ? (
         <p className={s.muted}>Henüz tekrar yok; core açılışta ve saatte bir hesaplar.</p>
       ) : (
         <>
@@ -358,7 +358,6 @@ function Replay({ rows, flips, first, now }: { rows: SdlRow[]; flips: number; fi
             <strong className={cum >= 0 ? s.tp : s.sl}>{signed(cum, ' R')}</strong>, en büyük düşüş {fmt2.format(dd)} R; {fmt2.format(10)} $ riskle {usd(dollars)}.
             {skipped.size > 0 &&
               ` Elenen: ${[...skipped.entries()].map(([k, n]) => `${n} ${REASON[k] ?? k}`).join(', ')}.`}
-            {flips > 0 && ` Dönüşüm şartından elenen ${flips} kurulum listelenmiyor.`}
           </p>
           {rows.length > 0 && (
             <div className={s.scroll} data-scroll>
@@ -404,7 +403,7 @@ function Pending({ d }: { d: SdlData }) {
           {info.durum !== 'liste'
             ? (PENDING_EMPTY[info.durum] ?? info.durum)
             : rows.length === 0
-              ? 'Bekleyen yok: bias yönünde dönmemiş, en az 50 $’lık bir FVG yok (ya da zonu dönüşüm şartından geçmiyor).'
+              ? 'Bekleyen yok: bias yönünde dönmemiş, en az 50 $’lık bir FVG yok.'
               : `${rows.length} FVG dönüş bekliyor: bir 3m kapanışı tetiği geçerse giriş.`}
           {info.durum === 'liste' && !info.pencere && ' Pencere 07:00’de açılır: o saatten önceki bir dönüş işlem açmaz ve kurulumu düşürür.'}
           {info.durum === 'liste' && info.haber && newsText(info.haber, now)}
@@ -478,8 +477,7 @@ function Pending({ d }: { d: SdlData }) {
         </div>
       )}
       <p className={s.note}>
-        Bias yönünde, henüz dönmemiş, en az 50 $’lık iFVG’ler; giriş zonu dönüşüm şartından geçenler. Değerler girişin tetikte olacağı varsayımıyla: SL şimdiye
-        kadarki iğneden (fiyat ilerlerse SL, R:R ve lot değişir), TP o girişin ötesindeki ilk zondan. Aynı kapanış birden çok FVG’yi döndürürse en son oluşan
+        Bias yönünde, henüz dönmemiş, en az 50 $’lık iFVG’ler. Değerler girişin tetikte olacağı varsayımıyla: SL şimdiye kadarki iğneden (fiyat ilerlerse SL, R:R ve lot değişir), TP o girişin ötesindeki ilk zondan. Aynı kapanış birden çok FVG’yi döndürürse en son oluşan
         alınır. Liste her 3m kapanışında yenilenir; satıra tıklayınca grafik.
       </p>
     </section>

@@ -2,8 +2,7 @@ import { db } from './db'
 
 // SDL sayfasının verisi: core'un durumu (sdl_status), NO TRADE düğmesi, sağlık satırları, sırada bekleyen kurulumlar
 // (sdl_pending; core her 3m kapanışında yazar), canlı kararlar (emir ve eski sistemdeki kaydıyla: legacy_orders, saatte
-// bir kopyalanıyor), geçmişin tekrarı ve elle zonlar. Dönüşüm şartından elenen kurulumlar listelenmez (Ari, 18 Kasım);
-// tekrarda yalnız sayısı.
+// bir kopyalanıyor), geçmişin tekrarı ve elle zonlar. Dönüşüm şartından elenen kurulumlar listelenmez (Ari, 18 Kasım).
 
 export type SdlStatus = {
   tradingEnabled: boolean
@@ -105,8 +104,7 @@ export type SdlData = {
   pendingInfo: SdlPendingInfo | null
   live: SdlRow[]
   replay: SdlRow[]
-  replayFlipCount: number
-  replayFirstDay: string | null // dönüşümle elenenler dahil ilk kurulumun günü
+  replayFirstDay: string | null // tekrarın ilk kurulumunun günü (listelenmeyenler dahil); null: henüz tekrar yok
   zones: SdlZone[]
 }
 
@@ -164,7 +162,7 @@ const SETUP_COLS = `s.id, s.mode, s.entry_t, s.day, s.side, s.zone_id, s.tp_zone
 
 export async function loadSdl(): Promise<SdlData> {
   const pool = db()
-  const [status, sw, health, pending, live, replay, flips, zones, now] = await Promise.all([
+  const [status, sw, health, pending, live, replay, first, zones, now] = await Promise.all([
     pool.query(`SELECT * FROM sdl_status WHERE id = 1`),
     pool.query(`SELECT enabled, changed_at FROM trading_switch WHERE strategy = 'sdl_elle'`),
     pool.query(
@@ -188,9 +186,7 @@ export async function loadSdl(): Promise<SdlData> {
       [`${LIVE_DAYS} days`],
     ),
     pool.query(`SELECT ${SETUP_COLS} FROM sdl_setups s WHERE s.mode = 'tekrar' AND s.reason IS DISTINCT FROM 'donusum' ORDER BY s.entry_t DESC`),
-    pool.query<{ n: string; first: string | null }>(
-      `SELECT count(*) FILTER (WHERE reason = 'donusum') AS n, min(day)::text AS first FROM sdl_setups WHERE mode = 'tekrar'`,
-    ),
+    pool.query<{ first: string | null }>(`SELECT min(day)::text AS first FROM sdl_setups WHERE mode = 'tekrar'`),
     pool.query(`SELECT id, lo, hi, created_at, ended_at, note FROM elle_zones ORDER BY lo DESC`),
     pool.query<{ now: Date }>('SELECT now() AS now'),
   ])
@@ -245,8 +241,7 @@ export async function loadSdl(): Promise<SdlData> {
     pendingInfo: st?.pending_info ?? null,
     live: live.rows.map(toRow),
     replay: replay.rows.map(toRow),
-    replayFlipCount: Number(flips.rows[0]?.n ?? 0),
-    replayFirstDay: flips.rows[0]?.first ?? null,
+    replayFirstDay: first.rows[0]?.first ?? null,
     zones: zones.rows.map((r) => ({ id: r.id, lo: r.lo, hi: r.hi, createdAt: r.created_at, endedAt: r.ended_at, note: r.note })),
   }
 }
