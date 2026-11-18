@@ -17,8 +17,8 @@
   /* Grafik: yükselen mum, düşen mum (renk körlüğünde de ayrışsın diye biri nötr) */
   --up: #199e70;
   --down: #8a93a8;
-  --zone: #9085e9; /* destek/direnç bantları (ısı sarı olduğu için mor) */
-  --manual: #27b0c4; /* elle zonlar (Piyasa grafiğinde otomatik destek/direncin morundan ayrılsın diye turkuaz) */
+  --zone: #9085e9; /* SDL kurulum grafiklerinde zon bantları (ısı sarı olduğu için mor) */
+  --manual: #27b0c4; /* Piyasa grafiğinde elle zonlar (eski sistemin /live grafiğindekiyle aynı turkuaz) */
   --short: #d95926; /* short rozeti ve L/S'te düşen eğim */
 
   --font: 'Atkinson Hyperlegible Next Variable', 'Atkinson Hyperlegible Next', system-ui, sans-serif;

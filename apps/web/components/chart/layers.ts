@@ -8,11 +8,11 @@ import type {
   SeriesAttachedParameter,
   Time,
 } from 'lightweight-charts'
-import type { ChartZone, ManualZone } from '@/lib/chart-shared'
+import type { ManualZone } from '@/lib/chart-shared'
 import type { HeatGrid } from '@/lib/heatmap'
 
-// Grafiğin üstüne çizilen katmanlar (Lightweight Charts eklentisi olarak): heatmap ısısı ve likidasyon profili,
-// destek/direnç bantları, elle zonlar. Hepsi mumların altında çizilir; yazıları mumların üstünde.
+// Grafiğin üstüne çizilen katmanlar (Lightweight Charts eklentisi olarak): heatmap ısısı ve likidasyon profili, elle
+// zonlar. İkisi de mumların altında çizilir; yazıları mumların üstünde.
 
 type Target = Parameters<IPrimitivePaneRenderer['draw']>[0]
 
@@ -251,87 +251,9 @@ export class HeatLayer extends Layer {
   }
 }
 
-// Destek/direnç: yalnız core'un gösterdiği bölgeler (fiyatın üstünde ve altında en güçlü 3, içinde olduğu), belirdiği
-// andan sağ kenara sabit bir bant. Sağda gücü yazar (heatmap profili açıksa profilin solunda).
-export class ZoneLayer extends Layer {
-  private zones: ChartZone[] = []
-  color = '#9085e9'
-  text = '#e9edf5'
-  bg = '#1a2336'
-  font = 'sans-serif'
-  labelInset = 8 // px, sağ kenardan
-
-  setZones(zones: ChartZone[]) {
-    this.zones = zones
-    this.update()
-  }
-
-  protected draw(target: Target) {
-    target.useBitmapCoordinateSpace(({ context: ctx, bitmapSize, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
-      const W = bitmapSize.width
-      const H = bitmapSize.height
-      const X = this.xScale()
-      for (const z of this.zones) {
-        const a = X(z.createdAt)
-        const yt = this.y(z.hi)
-        const yb = this.y(z.lo)
-        if (a === null || yt === null || yb === null) continue
-        const x0 = Math.max(0, a * hr)
-        if (x0 >= W) continue
-        const y0 = yt * vr
-        const y1 = yb * vr
-        if (y1 < 0 || y0 > H) continue
-        ctx.fillStyle = rgba(this.color, 0.2)
-        ctx.fillRect(x0, y0, W - x0, Math.max(1, y1 - y0))
-        ctx.strokeStyle = rgba(this.color, 0.85)
-        ctx.lineWidth = Math.max(1, hr)
-        ctx.beginPath()
-        ctx.moveTo(x0, Math.round(y0) + 0.5)
-        ctx.lineTo(W, Math.round(y0) + 0.5)
-        ctx.moveTo(x0, Math.round(y1) + 0.5)
-        ctx.lineTo(W, Math.round(y1) + 0.5)
-        if (x0 > 0) {
-          ctx.moveTo(Math.round(x0) + 0.5, y0)
-          ctx.lineTo(Math.round(x0) + 0.5, y1)
-        }
-        ctx.stroke()
-      }
-    })
-  }
-
-  // gücü bandın sağında, zemin şeridiyle (mumların üstünde okunsun)
-  protected drawTop(target: Target) {
-    target.useBitmapCoordinateSpace(({ context: ctx, bitmapSize, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
-      const W = bitmapSize.width
-      const H = bitmapSize.height
-      const X = this.xScale()
-      ctx.font = `600 ${11 * vr}px ${this.font}`
-      ctx.textAlign = 'right'
-      ctx.textBaseline = 'middle'
-      for (const z of this.zones) {
-        const a = X(z.createdAt)
-        const yt = this.y(z.hi)
-        const yb = this.y(z.lo)
-        if (a === null || yt === null || yb === null) continue
-        const x0 = Math.max(0, a * hr)
-        const ym = ((yt + yb) / 2) * vr
-        if (ym < 0 || ym > H) continue
-        const label = `güç ${z.score.toLocaleString('tr-TR', { maximumFractionDigits: 1 })}`
-        const xl = W - this.labelInset * hr
-        const w = ctx.measureText(label).width
-        if (xl - w - 6 * hr < x0) continue
-        ctx.fillStyle = rgba(this.bg, 0.8)
-        ctx.fillRect(xl - w - 4 * hr, ym - 8 * vr, w + 8 * hr, 16 * vr)
-        ctx.fillStyle = rgba(this.text, 0.9)
-        ctx.fillText(label, xl, ym)
-      }
-    })
-  }
-}
-
 // Elle zonlar (Ari'nin çizdiği; SDL v3 elle zon modeli bunlarla işlem yapıyor): şu an geçerli olanların hepsi,
-// geçerli olduğu andan sağ kenara bant. Numarası (#7) bandın solunda; destek/direncin güç yazısı sağda olduğu için
-// ikisi birlikte açıkken de karışmaz, renk de ayrı (turkuaz). Sol alttaki TradingView logosunun üstüne yazı konmaz.
+// geçerli olduğu andan sağ kenara turkuaz bant (eski sistemin /live grafiğindekiyle aynı renk). Numarası (#7) bandın
+// solunda, sağdaki heatmap profilinden uzakta; sol alttaki TradingView logosunun üstüne yazı konmaz.
 export class ManualZoneLayer extends Layer {
   private zones: ManualZone[] = []
   color = '#27b0c4'
@@ -404,9 +326,4 @@ export class ManualZoneLayer extends Layer {
       }
     })
   }
-}
-
-// Bir andaki bant: bölge o anda varsa (bant sabit).
-export function bandAt(z: ChartZone, t: number): [number, number] | null {
-  return t >= z.createdAt ? [z.lo, z.hi] : null
 }
