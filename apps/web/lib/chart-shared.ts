@@ -1,9 +1,18 @@
 // Grafiğin sunucu ve tarayıcı tarafında ortak sabitleri ve türleri (veritabanına dokunmaz; tarayıcı paketine girer).
 
-export const CHART_TFS = ['5m', '15m', '1h', '4h', '1d'] as const
+// 3m Axi'de yok: 1m mumlarından (lib/chart-data.ts load3m). Diğerleri collector'ın kaydettiği Axi mumları.
+export const CHART_TFS = ['1m', '3m', '5m', '15m', '1h', '4h', '1d'] as const
 export type ChartTf = (typeof CHART_TFS)[number]
 export const isChartTf = (s: unknown): s is ChartTf => typeof s === 'string' && (CHART_TFS as readonly string[]).includes(s)
-export const TF_MS: Record<ChartTf, number> = { '5m': 300_000, '15m': 900_000, '1h': 3_600_000, '4h': 14_400_000, '1d': 86_400_000 }
+export const TF_MS: Record<ChartTf, number> = {
+  '1m': 60_000,
+  '3m': 180_000,
+  '5m': 300_000,
+  '15m': 900_000,
+  '1h': 3_600_000,
+  '4h': 14_400_000,
+  '1d': 86_400_000,
+}
 export const MAX_CANDLES = 2000
 
 export type CandleRow = [number, number, number, number, number] // açılış (ms), o, h, l, c

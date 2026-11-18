@@ -107,7 +107,7 @@ Adresi açınca giriş sayfası gelir. Girişten sonra Piyasa sayfası açılır
 Sayfa dakikada bir kendini yeniler (sekme arka plandaysa yenilemez); fiyat ve oluşan mum canlı akışla anlık. Bütün saatler İstanbul saati; fiyatlar Axi BTCUSD.
 
 - **Üst satır:** canlı fiyat (son quote'un bid'i; Axi mumları da bid'den) ve saati, akış yoksa son 1m mumunun kapanışı; dünkü günlük kapanıştan değişim; baz (en yeni 24h heatmap'te CoinGlass ile Axi fiyat farkı), ATR 4h, günlük bias.
-- **Grafik:** tek temel grafik, Axi mumları. Dilim düğmeleri 5m, 15m, 1h, 4h, 1d (açılışta 15m).
+- **Grafik:** tek temel grafik, Axi mumları. Dilim düğmeleri 1m, 3m, 5m, 15m, 1h, 4h, 1d (açılışta 15m). 3m Axi'de yok: 1m mumlarından, UTC'ye (aynı zamanda İstanbul ve Axi saatine) hizalı 3 dakikalık dilimler.
   - Sürükleyerek geçmişe kaydırılır, tekerlekle yakınlaştırılır, fiyat ekseni sürüklenerek dikeyde ölçeklenir. Sola kaydırdıkça daha eski mumlar okunur.
   - Son mum oluşan mum: kayıtlı son mumdan sonrası kapanmış 1m mumlarından, canlı akış varken her quote'la güncellenir; dilim dolunca yeni mum açılır. Collector dilimin mumunu yazınca yerine o geçer. Her yeni 1m mumunda oluşan mumun açılış, tepe ve dibi 1m mumlarıyla düzeltilir (quote'larla görülen uçlar korunur).
   - Beyaz etiketli çizgi canlı fiyat (akış yoksa son 1m kapanışı).
@@ -129,7 +129,7 @@ Grafik verisini API verir; uçlar giriş ister ve önbelleğe alınmaz:
 
 | Uç | Ne verir |
 |---|---|
-| `/api/piyasa/mumlar?tf=1h[&before=<ms>\|&after=<ms>][&n=600]` | Axi mumları, eskiden yeniye: en yeni n, ya da bir andan önceki n (geçmişe kaydırınca), ya da bir andan sonrakiler (yeni kapanışlar). n en çok 2000. `forming`: henüz kaydedilmemiş oluşan mumlar (önceki ve şimdiki aralık, 1m mumlarından; before'da yok) |
+| `/api/piyasa/mumlar?tf=1h[&before=<ms>\|&after=<ms>][&n=600]` | Axi mumları (tf 1m, 3m, 5m, 15m, 1h, 4h, 1d), eskiden yeniye: en yeni n, ya da bir andan önceki n (geçmişe kaydırınca), ya da bir andan sonrakiler (yeni kapanışlar). n en çok 2000. `forming`: henüz kaydedilmemiş oluşan mumlar (önceki ve şimdiki aralık, 1m mumlarından; before'da yok). 3m'de `rows` 1m'lerden tamamlanmış dilimler, `forming` son dakikası henüz yazılmamış dilim |
 | `/api/piyasa/elle-zonlar` | GET: şu an geçerli elle zonların hepsi (numara, bant, geçerli olduğu an, kırılma takibi, yerine geçtikleri) ve ekleme kuralları (`rule`: çakışma eşiği, ATR, fiyat, uyarı sınırları). POST: zon ekleme ya da düzenleme (`{lo, hi, editId?, seen, end, breaksFrom?}`; 409: çakışmalar değişmiş, güncelleri döner) |
 | `/api/piyasa/elle-zonlar/<id>/kapat` | POST: zonu pasife alma |
 | `/api/piyasa/heatmap?span=24h[&id=<snapshot>]` | pencerenin en yeni (ya da id'si verilen) snapshot'ının ısı ızgarası, cluster'ları, bant likiditesi ve bazı |

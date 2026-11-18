@@ -61,6 +61,50 @@ export async function loadForming(tf: ChartTf): Promise<CandleRow[]> {
   return out
 }
 
+// 3m: Axi'de 3 dakikalık mum yok; 1m mumlarından (Ari, 18 Kasım). Dilimler UTC'ye hizalı (İstanbul ve Axi sunucu saati
+// tam saat farkında: aynı sınırlar). rows yalnız tamamlanmış dilimler (son dakikası yazılmış ya da geçmiş); forming
+// sonrası (oluşan dilim, en yeni okumada ve after'da). Okunan 1m mumlarının en eskisi bir dilimin ortasına
+// düşebileceği için o dilim atılır; boşluklu aralıklarda da (günlük Axi arası) her okuma tam n dilim verir (geçmiş
+// yetiyorsa).
+const M1 = 60_000
+const M3 = 180_000
+export async function load3m(opt: { before?: number; after?: number; n: number }): Promise<{ rows: CandleRow[]; forming: CandleRow[] }> {
+  const n = Math.max(1, Math.min(MAX_CANDLES, opt.n))
+  const limit = 3 * n + 60
+  const cols = `(extract(epoch FROM open_time) * 1000)::bigint::text AS t, open AS o, high AS h, low AS l, close AS c`
+  const base = `SELECT ${cols} FROM axi_candles WHERE symbol = $1 AND timeframe = '1m'`
+  const asc = opt.after !== undefined
+  const { rows } = await db().query<{ t: string; o: number; h: number; l: number; c: number }>(
+    asc
+      ? `${base} AND open_time > $2 ORDER BY open_time LIMIT $3`
+      : `${base} ${opt.before !== undefined ? 'AND open_time < $3' : ''} ORDER BY open_time DESC LIMIT $2`,
+    asc ? [SYMBOL, new Date(opt.after!), limit] : opt.before !== undefined ? [SYMBOL, limit, new Date(opt.before)] : [SYMBOL, limit],
+  )
+  const m1 = rows.map((r): CandleRow => [Number(r.t), r.o, r.h, r.l, r.c])
+  if (!asc) m1.reverse()
+  const full = m1.length === limit // okuma sınırına takıldı: bir uçtaki dilim eksik olabilir
+  const buckets: CandleRow[] = []
+  for (const [t, o, h, l, c] of m1) {
+    const b = Math.floor(t / M3) * M3
+    const last = buckets[buckets.length - 1]
+    if (last && last[0] === b) {
+      last[2] = Math.max(last[2], h)
+      last[3] = Math.min(last[3], l)
+      last[4] = c
+    } else buckets.push([b, o, h, l, c])
+  }
+  if (full && buckets.length > 0) {
+    if (asc) buckets.pop()
+    else buckets.shift()
+  }
+  if (opt.before !== undefined) return { rows: buckets.slice(-n), forming: [] }
+  // tamamlanmış: dilimin son dakikası en yeni kayıtlı 1m mumundan sonra değil (en yeni okumada ve after'da sınır o)
+  const newest = asc && full ? Infinity : (m1[m1.length - 1]?.[0] ?? -Infinity)
+  const done = buckets.filter((b) => b[0] + M3 <= newest + M1)
+  const forming = buckets.filter((b) => b[0] + M3 > newest + M1)
+  return asc ? { rows: done.slice(0, n), forming: done.length > n ? [] : forming } : { rows: done.slice(-n), forming }
+}
+
 // Elle zonlar: şu an geçerli olanların hepsi (Ari'nin çizdiği; grafikten eklenir ve düzenlenir, lib/zone-write.ts).
 const ACTIVE_MANUAL = `created_at <= now() AND (ended_at IS NULL OR ended_at > now())`
 type ManualRow = { id: number; lo: number; hi: number; created_at: Date; breaks_from: Date | null; replaces: number[] | null }

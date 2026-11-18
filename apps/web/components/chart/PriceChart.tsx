@@ -29,7 +29,7 @@ import s from './price-chart.module.css'
 import { attachZoneEditor, type EditMode } from './zone-editor'
 import { ZonePanel } from './ZonePanel'
 
-// Temel fiyat grafiği: Axi mumları (5m–1d, sürükleyerek geçmişe kaydırılır, tekerlekle yakınlaştırılır) ve
+// Temel fiyat grafiği: Axi mumları (1m–1d, 3m 1m'lerden; sürükleyerek geçmişe kaydırılır, tekerlekle yakınlaştırılır) ve
 // düğmeyle açılıp kapanan katmanlar: heatmap (ısı ve sağ kenarda likidasyon profili), cluster'lar, elle zonlar
 // (geçerli olanların hepsi), önceki gün/hafta seviyeleri. Otomatik destek/direnç bölgeleri gösterilmez (Ari, 18 Kasım:
 // Piyasa'da yalnız elle zonlar). Sondaki mumlar oluşan mumlar: kayıtlı son mumdan sonrası 1m mumlarından; canlı akış
@@ -43,7 +43,7 @@ import { ZonePanel } from './ZonePanel'
 const SHIFT = 3 * 3600
 const toChart = (ms: number) => (ms / 1000 + SHIFT) as UTCTimestamp
 const toBar = (r: CandleRow): CandlestickData<Time> => ({ time: toChart(r[0]), open: r[1], high: r[2], low: r[3], close: r[4] })
-const VISIBLE: Record<ChartTf, number> = { '5m': 144, '15m': 192, '1h': 168, '4h': 180, '1d': 180 } // açılışta görünen mum
+const VISIBLE: Record<ChartTf, number> = { '1m': 180, '3m': 160, '5m': 144, '15m': 192, '1h': 168, '4h': 180, '1d': 180 } // açılışta görünen mum
 const LOAD = 600 // bir okumada mum
 const SPANS: Span[] = ['12h', '24h', '48h']
 const LIST_PRICE_MS = 5000 // alttaki listelerde fiyat en çok bu sıklıkta değişir
