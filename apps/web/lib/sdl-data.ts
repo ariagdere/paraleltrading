@@ -91,7 +91,18 @@ export type SdlPendingInfo = {
   haber: { from: number; to: number; at: number[] } | null
 }
 
-export type SdlZone = { id: number; lo: number; hi: number; createdAt: Date; endedAt: Date | null; note: string | null }
+export type SdlZone = {
+  id: number
+  lo: number
+  hi: number
+  createdAt: Date
+  endedAt: Date | null
+  note: string | null
+  breaksFrom: Date | null // kırılma takibinin başlangıcı (yoksa createdAt)
+  replaces: number[] | null
+  replacedBy: number | null
+  endReason: string | null // duzenleme, cakisma, kapatma
+}
 
 export type SdlData = {
   now: Date
@@ -187,7 +198,10 @@ export async function loadSdl(): Promise<SdlData> {
     ),
     pool.query(`SELECT ${SETUP_COLS} FROM sdl_setups s WHERE s.mode = 'tekrar' AND s.reason IS DISTINCT FROM 'donusum' ORDER BY s.entry_t DESC`),
     pool.query<{ first: string | null }>(`SELECT min(day)::text AS first FROM sdl_setups WHERE mode = 'tekrar'`),
-    pool.query(`SELECT id, lo, hi, created_at, ended_at, note FROM elle_zones ORDER BY lo DESC`),
+    pool.query(
+      `SELECT id, lo, hi, created_at, ended_at, note, breaks_from, replaces, replaced_by, end_reason FROM elle_zones
+        ORDER BY (ended_at IS NOT NULL AND ended_at <= now()), lo DESC`,
+    ),
     pool.query<{ now: Date }>('SELECT now() AS now'),
   ])
   const st = status.rows[0]
@@ -242,6 +256,17 @@ export async function loadSdl(): Promise<SdlData> {
     live: live.rows.map(toRow),
     replay: replay.rows.map(toRow),
     replayFirstDay: first.rows[0]?.first ?? null,
-    zones: zones.rows.map((r) => ({ id: r.id, lo: r.lo, hi: r.hi, createdAt: r.created_at, endedAt: r.ended_at, note: r.note })),
+    zones: zones.rows.map((r) => ({
+      id: r.id,
+      lo: r.lo,
+      hi: r.hi,
+      createdAt: r.created_at,
+      endedAt: r.ended_at,
+      note: r.note,
+      breaksFrom: r.breaks_from,
+      replaces: r.replaces,
+      replacedBy: r.replaced_by,
+      endReason: r.end_reason,
+    })),
   }
 }

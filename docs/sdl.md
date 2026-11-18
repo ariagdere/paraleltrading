@@ -16,7 +16,7 @@ Kurallar araştırma motorunun birebir karşılığı (proje notu `claude/sdl-v3
   - İğne zonu aşabilir. SL iğne ± 15 $. TP girişin ötesindeki ilk zonun yakın kenarından 15 $ önce.
 - **Dönüşüm şartı:** giriş zonunun girişten önceki son kırılması işlem yönünde olmalı. Hiç kırılmamış zon geçmez.
   - Kırılma: zon oluştuktan sonra bir 4h kapanışının bandın 0,15 ATR(14, Wilder) ötesine geçmesi.
-  - Kırılmalar zonun `created_at` anından sayılır.
+  - Kırılmalar zonun kırılma takibi başlangıcından sayılır (`breaks_from`, yoksa `created_at`; 4h kapanışı değilse ondan sonraki ilk kapanıştan), zonun kendi sınırlarıyla.
 - **Haber:** haberden 1 saat önce yeni işlem açılmaz, 30 dk sonra yeniden açılır.
   - Kaynak `calendar_events`: eski DB'nin kırmızı klasörü, saatte bir kopyalanıyor.
   - Bu kural araştırmada yoktu.
@@ -80,11 +80,24 @@ Dönüşüm şartından elenen kurulumlar sayfadaki listelerde gösterilmez; say
 - **Hesap:** emirler aynı Axi hesabına gidiyor; hesap hedging modunda (her emir ayrı pozisyon).
 - **Lot üst sınırı:** `SDL_MAX_VOLUME`, varsayılan 0,2. SL en az ~65 $ uzakta olduğu için 10 $ riskte lot 0,15'i geçmez.
 
+## Elle zonları ekleme ve düzenleme
+
+Piyasa grafiğinden ve eski sistemin /live grafiğinden (Ari, 18 Kasım). İkisi de paralel web'in `/api/piyasa/elle-zonlar`'ına yazar; /live sunucudan sunucuya, `ZONE_API_TOKEN` ile ([railway-web.md](railway-web.md)).
+
+- **Ekleme:** yeni numara (en büyük numara + 1), kaydedildiği andan geçerli; geçmişin tekrarı değişmez. Kırılma takibi seçilen günden (varsayılan 1 Eylül 2026 00:00, ilk 15 zon gibi): o günden beri zonu geçen 4h kapanışları sayılır, zon hemen giriş zonu olabilir.
+- **Düzenleme:** yeni numaralı zon açılır, eskisi aynı anda kapanır (`end_reason` duzenleme, `replaced_by`). Kırılma takibi eskisinin başlangıcından, yeni sınırlarla.
+- **Çakışma:** yeni zon geçerli bir zonu kesiyorsa ya da aradaki boşluk 0,15 × ATR(14) 4h'den (kırılma eşiği; okunamazsa 150 $) küçükse kaydetmeden önce onay sorulur. İşaretli bırakılan çakışan zonlar kapanır (`cakisma`), işareti kaldırılanlar kalır. Düzenlemede düzenlenen zon bu denetime girmez.
+- **Pasife alma:** zon yalnız kapanır (`kapatma`).
+- **Uyarı (ek onay):** zon 20 $'dan dar, 2.000 $'dan geniş ya da fiyattan %25'ten uzak.
+- Kayıt tek transaction'da, tablo kilitliyken: kullanıcının gördüğü çakışmalar o an sunucudakiyle aynı değilse (arada başka ekrandan değiştiyse) kaydedilmez, güncel çakışmalar gösterilir.
+- core zonları dakikada bir okur: değişiklik kararlara en geç 1 dakikada, bekleyen listesine bir sonraki 3m kapanışında girer. Açık pozisyonların SL/TP'si değişmez.
+- Kolonlar: `breaks_from` (kırılma takibi), `replaces` (yerine geçtiği zonlar), `replaced_by`, `end_reason`, `source` (piyasa, live; boş: elle SQL).
+
 ## Kayıtlar
 
 | Tablo | İçerik |
 |---|---|
-| `elle_zones` | Zonlar. id kalıcı numara; yeni zon yeni numara, kapatırken `ended_at`. 15 zon migration'da (1 Eylül 00:00'dan). |
+| `elle_zones` | Zonlar. id kalıcı numara; silinmez, kapatırken `ended_at`. 15 zon migration 010'da (1 Eylül 00:00'dan). 012'den beri grafikten eklenir ve düzenlenir (aşağıda). |
 | `sdl_bars` | Akıştan kurulan 1m mumlar. |
 | `sdl_setups` | Kurulumlar ve kararları: `mode` canli ya da tekrar; `decision` emir ya da atla; `reason` atlama sebebi. Benzetilen sonuç (`sim_*`) saatte bir. |
 | `sdl_orders` | Emir niyetleri ve MetaApi sonucu (MT5 emir ve pozisyon numarası, dolum). |

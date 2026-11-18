@@ -334,3 +334,178 @@
 .note a {
   color: inherit;
 }
+
+/* Zon ekleme ve düzenleme (ZonePanel, zone-editor.ts) */
+.chart.drawing,
+.chart.drawing * {
+  cursor: crosshair !important;
+}
+
+.chart.drawing {
+  touch-action: none;
+}
+
+.chart:global(.zone-edge-hover),
+.chart:global(.zone-edge-hover) *,
+.chart:global(.zone-dragging),
+.chart:global(.zone-dragging) * {
+  cursor: ns-resize !important;
+}
+
+.chart:global(.zone-label-hover),
+.chart:global(.zone-label-hover) * {
+  cursor: pointer !important;
+}
+
+.zPanel {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--ink-2);
+}
+
+.zHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.zTitle {
+  font-weight: 700;
+}
+
+.zHint,
+.zMuted {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.zRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem 1rem;
+}
+
+.zField {
+  display: grid;
+  gap: 0.2rem;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.zField input {
+  width: 9rem;
+  padding: 0.35rem 0.55rem;
+  background: var(--ink);
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-base);
+}
+
+.zField input[type='date'] {
+  width: auto;
+  color-scheme: dark;
+}
+
+.zWidth {
+  padding-bottom: 0.4rem;
+  color: var(--muted);
+}
+
+.zCheck {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  cursor: pointer;
+}
+
+.zCheck input {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: var(--late);
+}
+
+.zConflicts {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--late) 55%, var(--line-2));
+  border-radius: 6px;
+}
+
+.zConflicts legend {
+  padding: 0 0.3rem;
+  color: var(--late);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.zSummary {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.zWarn {
+  color: var(--late);
+}
+
+.zError {
+  color: var(--fail);
+}
+
+.zActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.zButton,
+.zPrimary,
+.rowBtn {
+  padding: 0.4rem 0.95rem;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.zPrimary {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--ink);
+}
+
+.zButton:disabled,
+.zPrimary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.rowBtn {
+  padding: 0.1rem 0.6rem;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.rowBtn:hover {
+  color: var(--text);
+}
+
+.zMsg {
+  color: var(--ok);
+  font-size: var(--fs-sm);
+}

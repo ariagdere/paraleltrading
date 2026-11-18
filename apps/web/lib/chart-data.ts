@@ -61,14 +61,30 @@ export async function loadForming(tf: ChartTf): Promise<CandleRow[]> {
   return out
 }
 
-// Elle zonlar: şu an geçerli olanların hepsi (Ari'nin çizdiği; zon eklemek ya da kapatmak şimdilik veritabanından).
+// Elle zonlar: şu an geçerli olanların hepsi (Ari'nin çizdiği; grafikten eklenir ve düzenlenir, lib/zone-write.ts).
 const ACTIVE_MANUAL = `created_at <= now() AND (ended_at IS NULL OR ended_at > now())`
+type ManualRow = { id: number; lo: number; hi: number; created_at: Date; breaks_from: Date | null; replaces: number[] | null }
 export async function loadManualZones(): Promise<ManualZone[]> {
   try {
-    const { rows } = await db().query<{ id: number; lo: number; hi: number; created_at: Date }>(
-      `SELECT id, lo, hi, created_at FROM elle_zones WHERE ${ACTIVE_MANUAL} ORDER BY lo DESC`,
-    )
-    return rows.map((r) => ({ id: r.id, lo: r.lo, hi: r.hi, createdAt: r.created_at.getTime() }))
+    const rows = await db()
+      .query<ManualRow>(`SELECT id, lo, hi, created_at, breaks_from, replaces FROM elle_zones WHERE ${ACTIVE_MANUAL} ORDER BY lo DESC`)
+      .then((r) => r.rows)
+      .catch(async (err) => {
+        // 012 henüz uygulanmamış (deploy sırasında birkaç saniye: migration'ı collector ya da core uygular)
+        if ((err as { code?: string }).code !== '42703') throw err
+        const r = await db().query<ManualRow>(
+          `SELECT id, lo, hi, created_at, NULL::timestamptz AS breaks_from, NULL::int[] AS replaces FROM elle_zones WHERE ${ACTIVE_MANUAL} ORDER BY lo DESC`,
+        )
+        return r.rows
+      })
+    return rows.map((r) => ({
+      id: r.id,
+      lo: r.lo,
+      hi: r.hi,
+      createdAt: r.created_at.getTime(),
+      breaksFrom: (r.breaks_from ?? r.created_at).getTime(),
+      replaces: r.replaces,
+    }))
   } catch (err) {
     if ((err as { code?: string }).code === '42P01') return [] // tablo yok (010 uygulanmamış)
     throw err

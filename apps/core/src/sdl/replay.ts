@@ -6,7 +6,7 @@
 import { logRun, markFail, markOk, type Pool } from '@pt/db'
 import type { SdlConfig } from './config.js'
 import { load4h, loadBias, loadDailyDays, loadM1, loadNews, loadSpec, loadZones } from './data.js'
-import { DAY, M3, MIN, firstIndexAtOrAfter, istDay, rMultiple, scan, simExit, type Bar, type Side } from './engine.js'
+import { DAY, M3, MIN, firstIndexAtOrAfter, istDay, rMultiple, scan, simExit, trackStart, type Bar, type Side } from './engine.js'
 import { DEFAULT_SPEC, computeSizing } from './sizing.js'
 import { replaceReplay, type SetupWrite } from './store.js'
 
@@ -21,7 +21,7 @@ export async function replayTick(pool: Pool, cfg: SdlConfig, symbol: string): Pr
     const m1: Bar[] = (await loadM1(pool, symbol, from - DAY, cutoff)).map(({ t, o, h, l, c, sp }) => ({ t, o, h, l, c, sp }))
     let rows: SetupWrite[] = []
     if (zones.length > 0) {
-      const c4 = (await load4h(pool, symbol, Math.min(...zones.map((z) => z.createdAt)) - 60 * DAY)).filter((k) => k.t + 4 * 3_600_000 <= cutoff)
+      const c4 = (await load4h(pool, symbol, Math.min(...zones.map(trackStart)) - 60 * DAY)).filter((k) => k.t + 4 * 3_600_000 <= cutoff)
       const dailyDays = await loadDailyDays(pool, symbol, from - 3 * DAY)
       const bias = await loadBias(pool, istDay(from), istDay(now))
       const news = await loadNews(pool, from - DAY, now + DAY)

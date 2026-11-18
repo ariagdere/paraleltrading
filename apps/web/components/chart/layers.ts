@@ -3,6 +3,7 @@ import type {
   IPrimitivePaneRenderer,
   IPrimitivePaneView,
   ISeriesPrimitive,
+  ISeriesPrimitiveAxisView,
   Logical,
   PrimitivePaneViewZOrder,
   SeriesAttachedParameter,
@@ -254,11 +255,27 @@ export class HeatLayer extends Layer {
 // Elle zonlar (Ari'nin çizdiği; SDL v3 elle zon modeli bunlarla işlem yapıyor): şu an geçerli olanların hepsi,
 // grafik boyunca turkuaz bant (eski sistemin /live grafiğindekiyle aynı renk). Numarası (#7) bandın
 // solunda, sağdaki heatmap profilinden uzakta; sol alttaki TradingView logosunun üstüne yazı konmaz.
+// Zon eklenirken ya da düzenlenirken (zone-editor.ts): taslak kesik kenarlı açık bant, kenarlarında tutamaç ve fiyat
+// ekseninde iki etiket; çizimde ilk seçilen kenar kesik çizgi; düzenlenen zonun kendisi gizli; çakışan zonlar turuncu.
+export type ZoneEditMarks = {
+  hideId: number | null
+  marks: Map<number, 'kesisiyor' | 'yakin'>
+  draft: { lo: number; hi: number } | null
+  first: number | null
+  label: string // taslağın numara yerindeki yazısı
+}
+const NO_EDIT: ZoneEditMarks = { hideId: null, marks: new Map(), draft: null, first: null, label: '' }
+const HANDLE_X = 0.5 // tutamaçlar grafiğin ortasında (soldaki numaralardan ve sağdaki profilden uzak)
+
 export class ManualZoneLayer extends Layer {
   private zones: ManualZone[] = []
+  private edit: ZoneEditMarks = NO_EDIT
+  private labels: Array<{ id: number; x0: number; y0: number; x1: number; y1: number }> = [] // medya pikseli
+  private axisViews: ISeriesPrimitiveAxisView[] = []
   color = '#27b0c4'
   text = '#e9edf5'
   bg = '#1a2336'
+  warn = '#f2a541'
   font = 'sans-serif'
 
   setZones(zones: ManualZone[]) {
@@ -266,10 +283,50 @@ export class ManualZoneLayer extends Layer {
     this.update()
   }
 
-  // Geçerli zon grafik boyunca (geçerliliğin başladığı andan değil; Ari, 18 Kasım).
-  private box(z: ManualZone, H: number, vr: number) {
-    const yt = this.y(z.hi)
-    const yb = this.y(z.lo)
+  setEdit(edit: ZoneEditMarks | null) {
+    const had = this.edit.draft !== null || this.edit.first !== null
+    this.edit = edit ?? NO_EDIT
+    const has = this.edit.draft !== null || this.edit.first !== null
+    if (had !== has) this.axisViews = has ? this.makeAxisViews() : []
+    this.update()
+  }
+
+  // Tıklanan yerdeki zon numarası (medya pikseli; son çizimdeki etiket kutuları).
+  labelAt(x: number, y: number): number | null {
+    if (!this.on) return null
+    for (const r of this.labels) if (x >= r.x0 - 3 && x <= r.x1 + 3 && y >= r.y0 - 3 && y <= r.y1 + 3) return r.id
+    return null
+  }
+
+  priceAxisViews() {
+    return this.axisViews
+  }
+
+  private makeAxisViews(): ISeriesPrimitiveAxisView[] {
+    const price = (k: 'hi' | 'lo') => {
+      const e = this.edit
+      return e.draft ? e.draft[k] : k === 'hi' ? e.first : null
+    }
+    const view = (k: 'hi' | 'lo'): ISeriesPrimitiveAxisView => ({
+      coordinate: () => {
+        const p = price(k)
+        return p === null ? -100 : (this.y(p) ?? -100)
+      },
+      text: () => {
+        const p = price(k)
+        return p === null ? '' : new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 2 }).format(p)
+      },
+      textColor: () => this.bg,
+      backColor: () => this.text,
+      visible: () => this.on && price(k) !== null,
+      tickVisible: () => true,
+    })
+    return [view('hi'), view('lo')]
+  }
+
+  private box(lo: number, hi: number, H: number, vr: number) {
+    const yt = this.y(hi)
+    const yb = this.y(lo)
     if (yt === null || yb === null) return null
     const y0 = yt * vr
     const y1 = yb * vr
@@ -281,13 +338,16 @@ export class ManualZoneLayer extends Layer {
     target.useBitmapCoordinateSpace(({ context: ctx, bitmapSize, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
       const W = bitmapSize.width
       const H = bitmapSize.height
+      const e = this.edit
+      ctx.lineWidth = Math.max(1, hr)
       for (const z of this.zones) {
-        const b = this.box(z, H, vr)
+        if (z.id === e.hideId) continue
+        const b = this.box(z.lo, z.hi, H, vr)
         if (!b) continue
-        ctx.fillStyle = rgba(this.color, 0.16)
+        const c = e.marks.has(z.id) ? this.warn : this.color
+        ctx.fillStyle = rgba(c, e.marks.has(z.id) ? 0.22 : 0.16)
         ctx.fillRect(b.x0, b.y0, W - b.x0, Math.max(1, b.y1 - b.y0))
-        ctx.strokeStyle = rgba(this.color, 0.85)
-        ctx.lineWidth = Math.max(1, hr)
+        ctx.strokeStyle = rgba(c, 0.85)
         ctx.beginPath()
         ctx.moveTo(b.x0, Math.round(b.y0) + 0.5)
         ctx.lineTo(W, Math.round(b.y0) + 0.5)
@@ -295,26 +355,77 @@ export class ManualZoneLayer extends Layer {
         ctx.lineTo(W, Math.round(b.y1) + 0.5)
         ctx.stroke()
       }
+      ctx.setLineDash([6 * hr, 4 * hr])
+      ctx.strokeStyle = rgba(this.text, 0.9)
+      if (e.draft) {
+        const b = this.box(e.draft.lo, e.draft.hi, H, vr)
+        if (b) {
+          ctx.fillStyle = rgba(this.text, 0.1)
+          ctx.fillRect(0, b.y0, W, Math.max(1, b.y1 - b.y0))
+          ctx.beginPath()
+          ctx.moveTo(0, Math.round(b.y0) + 0.5)
+          ctx.lineTo(W, Math.round(b.y0) + 0.5)
+          ctx.moveTo(0, Math.round(b.y1) + 0.5)
+          ctx.lineTo(W, Math.round(b.y1) + 0.5)
+          ctx.stroke()
+        }
+      } else if (e.first !== null) {
+        const y = this.y(e.first)
+        if (y !== null) {
+          ctx.beginPath()
+          ctx.moveTo(0, Math.round(y * vr) + 0.5)
+          ctx.lineTo(W, Math.round(y * vr) + 0.5)
+          ctx.stroke()
+        }
+      }
+      ctx.setLineDash([])
     })
   }
 
   protected drawTop(target: Target) {
     target.useBitmapCoordinateSpace(({ context: ctx, bitmapSize, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
+      const W = bitmapSize.width
       const H = bitmapSize.height
+      const e = this.edit
       ctx.font = `600 ${11 * vr}px ${this.font}`
       ctx.textAlign = 'left'
       ctx.textBaseline = 'middle'
-      for (const z of this.zones) {
-        const b = this.box(z, H, vr)
-        if (!b) continue
+      const labels: typeof this.labels = []
+      const tag = (lo: number, hi: number, text: string, color: string) => {
+        const b = this.box(lo, hi, H, vr)
+        if (!b) return null
         const ym = (Math.max(0, b.y0) + Math.min(H, b.y1)) / 2 // bandın görünen kısmının ortası
-        const label = `#${z.id}`
-        const w = ctx.measureText(label).width
+        const w = ctx.measureText(text).width
         const x = b.x0 + (b.x0 < 56 * hr && ym > H - 44 * vr ? 56 : 8) * hr
         ctx.fillStyle = rgba(this.bg, 0.8)
         ctx.fillRect(x - 4 * hr, ym - 8 * vr, w + 8 * hr, 16 * vr)
-        ctx.fillStyle = rgba(this.text, 0.92)
-        ctx.fillText(label, x, ym)
+        ctx.fillStyle = rgba(color, 0.95)
+        ctx.fillText(text, x, ym)
+        return { x0: (x - 4 * hr) / hr, y0: (ym - 8 * vr) / vr, x1: (x + w + 4 * hr) / hr, y1: (ym + 8 * vr) / vr }
+      }
+      for (const z of this.zones) {
+        if (z.id === e.hideId) continue
+        const r = tag(z.lo, z.hi, `#${z.id}`, e.marks.has(z.id) ? this.warn : this.text)
+        if (r) labels.push({ id: z.id, ...r })
+      }
+      this.labels = labels
+      if (e.draft) {
+        tag(e.draft.lo, e.draft.hi, e.label, this.text)
+        // kenar tutamaçları
+        const hw = 7 * hr
+        const hh = 5 * vr
+        const cx = Math.round(W * HANDLE_X)
+        for (const p of [e.draft.hi, e.draft.lo]) {
+          const y = this.y(p)
+          if (y === null) continue
+          const cy = Math.round(y * vr)
+          if (cy < -hh || cy > H + hh) continue
+          ctx.fillStyle = this.text
+          ctx.strokeStyle = this.bg
+          ctx.lineWidth = Math.max(1, hr)
+          ctx.fillRect(cx - hw, cy - hh, 2 * hw, 2 * hh)
+          ctx.strokeRect(cx - hw + 0.5, cy - hh + 0.5, 2 * hw - 1, 2 * hh - 1)
+        }
       }
     })
   }

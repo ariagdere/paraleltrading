@@ -15,7 +15,7 @@ import type { SdlConfig } from './config.js'
 import { load4h, loadBias, loadDailyDays, loadM1, loadNews, loadSpec, loadZones } from './data.js'
 import {
   DAY, H, H4, M3, MIN, SDL, build3, candidateAt, istDay, istDayStart, istWeekday, nextNewsBlock, pendingAt, prevDay, verdict,
-  wilderAtr, zoneBreaks, type Bar, type Bar4, type Break, type DayContext, type Pending, type Zone,
+  trackStart, wilderAtr, zoneBreaks, type Bar, type Bar4, type Break, type DayContext, type Pending, type Zone,
 } from './engine.js'
 import { DEFAULT_SPEC, computeSizing, type Spec } from './sizing.js'
 import { replacePending, type PendingInfo, type PendingWrite, type SetupWrite } from './store.js'
@@ -241,9 +241,10 @@ export class SdlLive {
     return this.specCache.spec
   }
 
-  // 4h mumları (ATR ısınması için zonlardan 60 gün önceden); son kapanan mum kapanışından 5 dk geçmediyse 1m'lerden.
+  // 4h mumları (ATR ısınması için kırılma takibinin en erken başlangıcından 60 gün önceden); son kapanan mum
+  // kapanışından 5 dk geçmediyse 1m'lerden.
   private async fourHours(T: number, zones: Zone[], now: number): Promise<Bar4[]> {
-    const from = Math.min(...zones.map((z) => z.createdAt)) - ATR_WARMUP_MS
+    const from = Math.min(...zones.map(trackStart)) - ATR_WARMUP_MS
     const list: Bar4[] = (await load4h(this.pool, this.symbol, from)).map(({ t, o, h, l, c }) => ({ t, o, h, l, c }))
     const closeT = axiOpen(T, H4) // T'yi içeren 4h mumunun açılışı = son kapanan mumun kapanışı
     if (T - closeT >= 5 * MIN) return list

@@ -7,7 +7,7 @@ web, Hakari 2'nin tarayıcıdan açılan yüzü. Dört sayfa var:
 - **Simülasyon**: naif setup'ın kombinasyon taraması (core, ayda bir ve istenince), şans testi, önceki bulgunun denetimi ve Claude'un yorumu; "Şimdi çalıştır" düğmesi.
 - **Sağlık**: her veri kaynağının son verisinin ne zaman geldiği, sıradakinin ne zaman beklendiği, gecikenler ve hatalar.
 
-collector ve core'la aynı repodan üçüncü bir servis. Veritabanını okur: oturumlar salt okunur açılır (`default_transaction_read_only`). Tek yazma yolu Simülasyon sayfasının "Şimdi çalıştır" düğmesi: ayrı, tek bağlantılık bir havuzla `sim_runs`'a istek satırı ekler (sırada ya da çalışan koşu varsa eklemez); koşuyu core yapar. Kullanıcı adı ve şifre Railway değişkenlerinde; giriş yapılmadan hiçbir sayfa ve veri açılmaz. Canlı fiyat için MetaApi'ye tek bir streaming bağlantısı açar (yalnız BTCUSD quote'ları; işlem yapmaz, hesabı deploy etmez).
+collector ve core'la aynı repodan üçüncü bir servis. Veritabanını okur: oturumlar salt okunur açılır (`default_transaction_read_only`). Yazma yolları ayrı, tek bağlantılık bir havuzla: Simülasyon sayfasının "Şimdi çalıştır" düğmesi (`sim_runs`'a istek satırı; sırada ya da çalışan koşu varsa eklemez, koşuyu core yapar), SDL sayfasının NO TRADE düğmesi (`trading_switch`) ve elle zon ekleme / düzenleme (`elle_zones`; Piyasa grafiğinden ve eski sistemin /live'ından, [sdl.md](sdl.md#elle-zonları-ekleme-ve-düzenleme)). Kullanıcı adı ve şifre Railway değişkenlerinde; giriş yapılmadan hiçbir sayfa ve veri açılmaz. Canlı fiyat için MetaApi'ye tek bir streaming bağlantısı açar (yalnız BTCUSD quote'ları; işlem yapmaz, hesabı deploy etmez).
 
 ## 1. Servisi aç
 
@@ -45,6 +45,7 @@ Aynı projede New → GitHub Repo → `ariagdere/paraleltrading`. Yeni servisin 
 | `METAAPI_TOKEN` | canlı fiyat için, collector'daki gibi: `${{shared.METAAPI_TOKEN}}` |
 | `METAAPI_ACCOUNT_ID` | `${{shared.METAAPI_ACCOUNT_ID}}` |
 | `METAAPI_REGION` | yalnız hesap london dışındaysa (collector'da da öyle) |
+| `ZONE_API_TOKEN` | eski sistemin /live'ı elle zonları bu anahtarla okur ve yazar: uzun rastgele bir değer (40+ karakter); hakari-dashboard'da `PARALEL_ZONE_TOKEN` olarak aynısı. Yoksa /live'dan zon eklenemez (Piyasa'dan eklenir) |
 
 - `WEB_USER` ya da `WEB_PASSWORD` yoksa hiçbir sayfa açılmaz; giriş sayfası hangi değişkenin eksik olduğunu yazar.
 - `WEB_SESSION_SECRET` yoksa imza için `DATABASE_URL` kullanılır; çalışır ama ayrı bir değer daha iyi.
@@ -98,6 +99,7 @@ Adresi açınca giriş sayfası gelir. Girişten sonra Piyasa sayfası açılır
 - Oturum imzalı bir çerezde (`hakari2_session`); sunucuda oturum tablosu yok. 30 gün geçerli, kullandıkça uzar; girişten 90 gün sonra yeniden giriş istenir.
 - Aynı IP'den 15 dakikada 10 hatalı denemede o IP 15 dakika kilitlenir (servis yeniden başlayınca sayaç sıfırlanır).
 - Başka bir siteden gönderilen form ve yazan istekler reddedilir.
+- Tek istisna elle zon API'si (`/api/piyasa/elle-zonlar` ve altı): eski sistemin /live sunucusu `Authorization: Bearer <ZONE_API_TOKEN>` ile oturumsuz okur ve yazar. Anahtar başka hiçbir yolu açmaz; `ZONE_API_TOKEN` tanımlı değilse (ya da 24 karakterden kısaysa) bu yol kapalı.
 - Menüdeki "Çıkış yap" (telefonda "Çıkış") çerezi siler.
 
 ## 7. Piyasa sayfası
@@ -114,6 +116,8 @@ Sayfa dakikada bir kendini yeniler (sekme arka plandaysa yenilemez); fiyat ve ol
   - **Heatmap:** CoinGlass model1 likidasyon seviyeleri mumların arkasında; koyuluk o fiyattaki likidasyon miktarı, kesik dikey çizgi heatmap'in alındığı an. Son sütun (o anki seviyeler) grafiğin sağ kenarına kadar uzar. Sağ kenardaki gri çubuklar fiyat seviyesine göre toplam likidasyon (profil); heatmap'in kapsamadığı uzun aralıklarda da görünür. Heatmap ve cluster'lar baz kadar kaydırılır, yani Axi fiyatıyla çizilir; snapshot anına ait Axi mumu yoksa CoinGlass fiyatıyla çizilir ve altta yazar.
   - **Cluster'lar:** core'un `heatmap_levels` tablosundan, fiyatın üstünde ve altında en çok üçer çizgi. Numara core'daki sıra: 1 eski sistemin kullandığı en büyük cluster (düz çizgi), 2 ve 3 aynı kuralın kalan seviyelerde tekrarı (kesik). Grafiğin sağ ucu görünürken fiyat ekseni fiyatın %6'sından yakın en yakın cluster'ları da kapsar.
   - **Elle zonlar:** Ari'nin çizdiği zonların (`elle_zones`; SDL v3 elle zon modeli bunlarla işlem yapıyor) şu an geçerli olanlarının hepsi. Grafik boyunca turkuaz bant (geçerliliğin başladığı andan değil; Ari, 18 Kasım); numarası (#7) bandın solunda. Otomatik destek/direnç bölgeleri Piyasa'da gösterilmiyor (Ari, 18 Kasım); core onları hesaplamaya devam ediyor (`sr_zones`). İmleç bir zonun içindeyse ipucunda numarası ve bandı. Zon eklenip kapanınca dakikalık yenileme yenisini getirir. Açılışta açık.
+  - **Zon ekle:** grafikte basılı tutup dikey sürükle ya da üst ve alt sınıra ayrı ayrı tıkla (telefonda iki dokunuş). Bırakınca grafiğin altında panel: üst ve alt fiyat (yazarak ya da kenarları sürükleyerek), genişlik, kırılma takibi başlangıcı (varsayılan 1 Eylül), mıknatıs (kenar imlecin altındaki mumun tepe, dip, açılış ya da kapanışına 12 px'ten yakınsa ona yapışır; seçim tarayıcıda hatırlanır). Çakışan zonlar turuncu; panelde işaretliler pasife alınır. Enter kaydet, Esc vazgeç.
+  - **Düzenle / pasife al:** zonun numarasına (#7) tıkla ya da alttaki listede "Düzenle". Kaydet yeni numaralı zon açar, eskisini kapatır; "Pasife al" yalnız kapatır. Düzenlemede, çakışmada ve uyarıda kaydetmeden önce onay özeti.
   - **Önceki gün/hafta:** dünün tepe ve dibi (pdh, pdl), geçen haftanın tepe, dip, açılış ve kapanışı (pwh, pwl, pwo, pwc); kesik çizgiler. Gün 00:00'da, hafta pazartesi 00:00'da (İstanbul) başlar.
 - **Heatmap penceresi** (heatmap ya da cluster katmanı açıkken): 12h, 24h, 48h (açılışta 24h) ve son güncelleme anı. Hep pencerenin en yeni snapshot'ı gösterilir; dakikalık yenileme yenisini getirir. Geçmiş snapshot'lar veritabanında; simülasyonda kullanılacak (API'de `&id=` ile okunabilir).
 - **Grafiğin altında** yalnız açık katmanların ayrıntısı: elle zonların hepsi yukarıdan aşağı, aralarında fiyat (numara, bant, fiyata uzaklık, geçerli olduğu gün); cluster'lar ve bant likiditesi (referansın %1, %2 ve %3 altı ve üstü); önceki gün ve hafta seviyeleri.
@@ -126,7 +130,8 @@ Grafik verisini API verir; uçlar giriş ister ve önbelleğe alınmaz:
 | Uç | Ne verir |
 |---|---|
 | `/api/piyasa/mumlar?tf=1h[&before=<ms>\|&after=<ms>][&n=600]` | Axi mumları, eskiden yeniye: en yeni n, ya da bir andan önceki n (geçmişe kaydırınca), ya da bir andan sonrakiler (yeni kapanışlar). n en çok 2000. `forming`: henüz kaydedilmemiş oluşan mumlar (önceki ve şimdiki aralık, 1m mumlarından; before'da yok) |
-| `/api/piyasa/elle-zonlar` | şu an geçerli elle zonların hepsi (numara, bant, geçerli olduğu an) |
+| `/api/piyasa/elle-zonlar` | GET: şu an geçerli elle zonların hepsi (numara, bant, geçerli olduğu an, kırılma takibi, yerine geçtikleri) ve ekleme kuralları (`rule`: çakışma eşiği, ATR, fiyat, uyarı sınırları). POST: zon ekleme ya da düzenleme (`{lo, hi, editId?, seen, end, breaksFrom?}`; 409: çakışmalar değişmiş, güncelleri döner) |
+| `/api/piyasa/elle-zonlar/<id>/kapat` | POST: zonu pasife alma |
 | `/api/piyasa/heatmap?span=24h[&id=<snapshot>]` | pencerenin en yeni (ya da id'si verilen) snapshot'ının ısı ızgarası, cluster'ları, bant likiditesi ve bazı |
 | `/api/piyasa/canli` | canlı fiyat akışı (Server-Sent Events): `hello` (akışın durumu, son quote), `quote` (bid, ask, an; istemci başına en çok 250 ms'de bir), hazır değilken 5 sn'de bir `status`; 15 sn'de bir boş satır |
 

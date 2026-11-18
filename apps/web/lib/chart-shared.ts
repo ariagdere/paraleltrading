@@ -9,7 +9,8 @@ export const MAX_CANDLES = 2000
 export type CandleRow = [number, number, number, number, number] // açılış (ms), o, h, l, c
 
 // Elle zon (elle_zones; Ari'nin çizdiği, SDL v3 elle zon modeli bunlarla işlem yapıyor): şu an geçerli olanlar.
-export type ManualZone = { id: number; lo: number; hi: number; createdAt: number }
+// breaksFrom: kırılma takibinin başlangıcı; replaces: yerine geçtiği zonlar (düzenleme ya da çakışma).
+export type ManualZone = { id: number; lo: number; hi: number; createdAt: number; breaksFrom: number; replaces: number[] | null }
 
 export type PrevLevels = {
   day: { at: number; h: number; l: number; c: number } | null // dün (kapanmış son günlük mum)
