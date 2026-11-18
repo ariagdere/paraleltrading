@@ -60,7 +60,7 @@ SDL sayfasında bir satıra (bekleyen, canlı ya da tekrar) tıklayınca altınd
 - **Çıkış:** gerçek işlem (eski sistemin kaydı) > benzetim > açık (son fiyat). Bekleyende planlanan pozisyon son mumun sağında, soluk; kesik çizgi tetik.
 - Veri `/api/sdl/grafik?kurulum=<id>` ya da `?bekleyen=<SHORT|LONG>-<FVG ms>`; mumlar `axi_candles` 1m'den, resmide olmayan son dakikalar `sdl_bars`'tan.
 
-Dönüşüm şartından elenen kurulumlar sayfadaki listelerde gösterilmez; tekrarda yalnız sayısı yazılır.
+Dönüşüm şartından elenen kurulumlar sayfadaki listelerde gösterilmez; sayfada dönüşüm şartıyla ilgili açıklama da yok (Ari, 18 Kasım: net bir kural). Kural ve elenenler bu dokümanda ve `sdl_setups`'ta (`reason = 'donusum'`).
 
 ## Emir
 
