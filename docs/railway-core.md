@@ -1,6 +1,6 @@
 # core servisi (Railway)
 
-core, collector'ın yazdığı ham verilerden hesaplanan değerleri üretip aynı Postgres'e yazan ikinci süreç. Altı hesap yapıyor:
+core, collector'ın yazdığı ham verilerden hesaplanan değerleri üretip aynı Postgres'e yazan ikinci süreç. Altı hesap yapıyor ve SDL'yi (elle zonlarla canlı işlem) yürütüyor:
 
 - **Axi göstergeleri** (`axi_indicators`): ZLEMA bölgesi, RSI 14 ve ATR 14; 15m, 1h, 4h ve 1d dilimlerinde her kapanmış mum için.
 - **Destek/direnç bölgeleri** (`sr_zones`, `sr_zone_events`): Axi 4h ve 1d mumlarından; her bölgenin belirdiği ve bittiği an, sabit bandı, gücü, hangi dilimlerden geldiği, olayları (test, tuttu, kırıldı) ve ekranda gösterilip gösterilmediği. Her 4h kapanışında.
@@ -8,6 +8,8 @@ core, collector'ın yazdığı ham verilerden hesaplanan değerleri üretip ayn�
 - **L/S açıları** (`lsr_angles`): global ve TT pozisyon oranı için 5m, 15m, 1h ve 4h dilimlerinde serinin her noktasında açı.
 - **Naif kural kararları** (`naive_decisions`): eski sistemin naif kuralının yeni sistemin verisiyle yeniden oynatılması ve ileri izlemesi (doğrulama). 18 Eylül'den bu yana her 12h snapshot'ında karar ve sinyalse Axi 1m mumlarıyla benzetilen işlem.
 - **Kombinasyon simülasyonu** (`sim_runs`): naif setup'ın long ve short için ZLEMA, L/S açısı ve yakın/uzak cluster oranı kombinasyonlarıyla taranması, şans testi ve bir önceki koşunun bulgularının arada geçen dönemde denetimi. Her ayın 1'inde 04:00'te (İstanbul) ve web'in Simülasyon sayfasındaki "Şimdi çalıştır"la. Sonuç GitHub'daki `sim-data` dalına da yazılır; Claude'un zamanlanmış görevi oradan okuyup yorumunu aynı dala koyar, core yorumu alıp sayfaya taşır.
+
+- **SDL v3, elle zonlar** (`sdl_setups`, `sdl_orders`, `sdl_bars`): MetaApi fiyat akışından 1m mumlar, her 3m kapanışında kurulum ve karar, kurallardan geçen kurulumda Axi'ye emir (magic 15033; Railway'de `SDL_TRADING_ENABLED` ve web'deki NO TRADE düğmesi açıksa), saatte bir geçmişin aynı kurallarla tekrarı. Ayrıntı: [sdl.md](sdl.md).
 
 collector'la aynı repodan ikinci bir servis: kod aynı, başlatma komutu ve izlenen yollar farklı. Böylece core'a gelen bir değişiklik collector'ı yeniden başlatmaz, core'daki bir hata da veri toplamayı durdurmaz. İkisi aynı Postgres'i kullanır.
 
@@ -44,8 +46,16 @@ Start Command'in npm üzerinden değil doğrudan node ile olması collector'daki
 | `SIM_GITHUB_TOKEN` | Simülasyon sonucunu `sim-data` dalına yazmak için GitHub token'ı (aşağıda). Yoksa simülasyon yine çalışır ve sayfada görünür, ama dala yazılamaz ve Claude yorumlayamaz |
 | `SIM_FROM` | İsteğe bağlı: simülasyon verisinin en erken anı; varsayılan `2026-09-17T00:00:00Z`. Bütün değişkenlerin dolu olduğu saatler ayrıca seçilir (şu an 21 Eylül 15:00'ten itibaren) |
 | `SIM_REPO`, `SIM_BRANCH` | İsteğe bağlı: varsayılan `ariagdere/paraleltrading` ve `sim-data` |
+| `METAAPI_TOKEN` | SDL'nin fiyat akışı ve emri için: `${{shared.METAAPI_TOKEN}}` (collector'daki paylaşılan değer; token'ın işlem yetkisi olmalı). Yoksa SDL kararlarını resmi mumlarla verir, emir gitmez |
+| `METAAPI_ACCOUNT_ID` | `${{shared.METAAPI_ACCOUNT_ID}}` |
+| `METAAPI_REGION` | Yalnız hesap london dışındaysa (collector'da da öyle) |
+| `SDL_TRADING_ENABLED` | `true` olunca SDL emir gönderir (web'deki NO TRADE düğmesi de açıksa). Yoksa ya da başka bir değerse gölge mod: kararlar yazılır, emir gitmez |
+| `SDL_RISK_USD`, `SDL_MIN_LOT_MAX_RISK_USD` | İsteğe bağlı: işlem başına hedef risk (varsayılan 10) ve en küçük lotta izin verilen en büyük risk (varsayılan 20), $ |
+| `SDL_MAGIC` | İsteğe bağlı: varsayılan `15033` (eski sistemin monitöründe bu numara "SDL_v3 - Manuel Zone No Cap" etiketine bağlı) |
+| `SDL_MAX_VOLUME` | İsteğe bağlı güvenlik sınırı: varsayılan 0,2 lot |
+| `SDL_REPLAY_FROM` | İsteğe bağlı: geçmişin tekrarının başladığı an; varsayılan `2026-10-01T00:00:00+03:00` |
 
-Başka değişken gerekmiyor; core yalnız simülasyon için GitHub'a bağlanır. `Postgres` yerine kanvastaki Postgres servisinin adı yazılır (`${{` yazınca açılan listeden seçmek en güvenlisi).
+Başka değişken gerekmiyor; core yalnız simülasyon için GitHub'a, SDL için MetaApi'ye bağlanır. `Postgres` yerine kanvastaki Postgres servisinin adı yazılır (`${{` yazınca açılan listeden seçmek en güvenlisi).
 
 ### `SIM_GITHUB_TOKEN` nasıl alınır
 
@@ -72,6 +82,9 @@ Başka değişken gerekmiyor; core yalnız simülasyon için GitHub'a bağlanır
 [core] L/S açıları (global): ... satır yazıldı
 [core] L/S açıları (top_position): ... satır yazıldı
 [core] naif: ... karar (... sinyal, ... açık işlem); ... satır yazıldı, 0 silindi
+[sdl] başladı: emir kapalı (gölge: kararlar yazılır, emir gitmez), magic 15033, risk 10 $ (en küçük lotta en çok 20 $), fiyat akışı var
+[sdl] fiyat akışı hazır: BTCUSD
+[sdl] tekrar: ... kurulum, ... işlem; canlı sonuç ...
 ```
 
 - Yeni bir migration'ı (ör. `006_destek_direnc.sql`) hangi servis önce açılırsa o uygular. `packages/db`'yi değiştiren bir merge collector'ı, core'u ve web'i birlikte yeniden başlatır; migration'ı büyük ihtimalle collector uygular (`uygulandı: 006_destek_direnc.sql`), core sonra açılınca "şema güncel" yazar. Heatmap turuna denk gelmesin diye böyle merge'leri xx:00–xx:06 dışında yap.

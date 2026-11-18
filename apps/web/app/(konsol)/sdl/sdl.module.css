@@ -1,0 +1,197 @@
+/* SDL: üstte durum cümlesi ve NO TRADE düğmesi, altında core'un durumu, canlı kararlar, geçmişin tekrarı ve zonlar.
+   Renk yalnız durum, yön ve sonuç için: long ve TP yeşil, short ve SL turuncu (ok ve yazı da aynı bilgiyi taşır). */
+
+.hero {
+  max-width: 72rem;
+}
+
+.heroTop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem 2rem;
+}
+
+.title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8rem;
+  font-size: var(--fs-xl);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.dot {
+  flex: none;
+  width: 0.6em;
+  height: 0.6em;
+  border-radius: 50%;
+  background: var(--level, var(--idle));
+  transform: translateY(-0.04em);
+}
+
+.lead {
+  margin-top: 0.9rem;
+  color: var(--muted);
+  max-width: 64rem;
+  text-wrap: pretty;
+}
+
+.notice {
+  margin-top: 0.75rem;
+  padding: 0.55rem 0.8rem;
+  border-left: 4px solid var(--ok);
+  background: color-mix(in srgb, var(--ok) 8%, var(--ink));
+  max-width: 62rem;
+}
+
+.switchForm {
+  margin: 0;
+}
+
+.switchButton {
+  padding: 0.6rem 1.1rem;
+  border-radius: 8px;
+  border: 1px solid var(--line-2);
+  background: var(--ink-3);
+  color: var(--text);
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.switchButton[data-on='true'] {
+  border-color: color-mix(in srgb, var(--late) 70%, var(--line-2));
+}
+
+.switchButton:hover {
+  border-color: var(--muted);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 1rem 2rem;
+  margin: 1.75rem 0 0;
+}
+
+.facts dt {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.facts dd {
+  margin: 0.15rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.sub {
+  display: block;
+  font-weight: 400;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.warn {
+  display: block;
+  color: var(--late);
+  font-size: var(--fs-sm);
+}
+
+.section {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+  margin-top: 2.75rem;
+}
+
+.section > * {
+  min-width: 0;
+}
+
+.h2 {
+  font-size: var(--fs-md);
+}
+
+.summary {
+  max-width: 72rem;
+  text-wrap: pretty;
+}
+
+.scroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: 0.5rem 1.2rem 0.5rem 0;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+}
+
+.table thead th {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  vertical-align: bottom;
+}
+
+.table tbody th {
+  font-weight: 600;
+}
+
+.narrow {
+  max-width: 40rem;
+}
+
+/* Karar ve emir metni uzun olabilir: sarılsın, tablo geniş ekranda sığsın */
+.table td.reason {
+  white-space: normal;
+  min-width: 10rem;
+  max-width: 16rem;
+}
+
+.r {
+  text-align: right !important;
+}
+
+.note {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  max-width: 82ch;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.go {
+  font-weight: 700;
+}
+
+.long,
+.tp {
+  color: var(--up);
+  font-weight: 600;
+}
+
+.short,
+.sl {
+  color: color-mix(in srgb, var(--short) 80%, white);
+  font-weight: 600;
+}
+
+@media (max-width: 760px) {
+  .title {
+    font-size: var(--fs-lg);
+  }
+}
