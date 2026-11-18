@@ -193,7 +193,7 @@ export function ManualList({ zones, price }: { zones: ManualZone[]; price: numbe
             </table>
           </div>
           <p className={s.note}>
-            Ari&apos;nin çizdiği zonlar; SDL v3 elle zon modeli bunlarla işlem yapıyor. Grafikte geçerli olanların hepsi, geçerli oldukları andan beri. Zon eklemek ya
+            Ari&apos;nin çizdiği zonlar; SDL v3 elle zon modeli bunlarla işlem yapıyor. Grafikte geçerli olanların hepsi, grafik boyunca. Zon eklemek ya
             da kapatmak şimdilik veritabanından (elle_zones).
           </p>
         </>

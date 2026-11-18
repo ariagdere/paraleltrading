@@ -268,7 +268,7 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
         if (v !== null && v !== undefined) add(el, 'likidasyon', usd(v), true)
       }
       if (L.manual) {
-        const m = manualRef.current.find((x) => tReal >= x.createdAt && at >= x.lo && at <= x.hi)
+        const m = manualRef.current.find((x) => at >= x.lo && at <= x.hi)
         if (m) {
           const box = document.createElement('div')
           box.className = s.tipZone!
