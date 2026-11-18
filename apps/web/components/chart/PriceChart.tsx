@@ -16,15 +16,18 @@ import {
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CHART_TFS, TF_MS, type CandleRow, type ChartTf, type ChartTokens, type ManualZone, type PrevLevels } from '@/lib/chart-shared'
 import type { HeatView, Span } from '@/lib/market-data'
+import { ZONE_DEFAULT_BREAKS_FROM, zoneConflicts, zoneWarnings, type ZoneRule } from '@/lib/zone-rules'
 import { useLive, type LiveQuote } from '../live'
 import { applyQuote, mergeTail, type CandleBody } from './bars'
 import { HeatLevels, ManualList, PrevList } from './details'
 import { dmh, fmtP, hm, usd } from './format'
 import { HeatLayer, ManualZoneLayer, TimeAxis, rgba } from './layers'
 import s from './price-chart.module.css'
+import { attachZoneEditor, type EditMode } from './zone-editor'
+import { ZonePanel } from './ZonePanel'
 
 // Temel fiyat grafiği: Axi mumları (5m–1d, sürükleyerek geçmişe kaydırılır, tekerlekle yakınlaştırılır) ve
 // düğmeyle açılıp kapanan katmanlar: heatmap (ısı ve sağ kenarda likidasyon profili), cluster'lar, elle zonlar
@@ -33,6 +36,8 @@ import s from './price-chart.module.css'
 // varken her quote'la (bid) güncellenir, dilim dolunca yeni mum açılır. Veriyi API'den okur; sayfanın dakikalık
 // yenilemesi yalnız "değişti mi" işaretlerini getirir: yeni 1m mumu gelince son mumlar, elle zonlar değişince zonlar,
 // seçili pencerede yeni snapshot olunca heatmap okunur. Seçimler (dilim, katmanlar, pencere) tarayıcıda hatırlanır.
+// Elle zon ekleme ve düzenleme (Ari, 18 Kasım): "Zon ekle" ile grafikte çizilir, numarasına tıklanan zon düzenlenir ya
+// da pasife alınır (zone-editor.ts, ZonePanel.tsx; kayıt /api/piyasa/elle-zonlar, kurallar lib/zone-rules.ts).
 
 // İstanbul UTC+3 ve yaz saati yok: zamanlar 3 saat kaydırılır, kütüphanenin UTC ekseni İstanbul saatini gösterir.
 const SHIFT = 3 * 3600
@@ -42,6 +47,10 @@ const VISIBLE: Record<ChartTf, number> = { '5m': 144, '15m': 192, '1h': 168, '4h
 const LOAD = 600 // bir okumada mum
 const SPANS: Span[] = ['12h', '24h', '48h']
 const LIST_PRICE_MS = 5000 // alttaki listelerde fiyat en çok bu sıklıkta değişir
+const ZONE_PREFS_KEY = 'hakari2.piyasa.zon.v1' // mıknatıs
+const DEFAULT_BREAKS_DAY = new Date(Date.parse(ZONE_DEFAULT_BREAKS_FROM) + SHIFT * 1000).toISOString().slice(0, 10) // İstanbul günü
+type ZoneEdit = { mode: EditMode; first: number | null; draft: { lo: number; hi: number } | null; editId: number | null }
+const ZONE_OFF: ZoneEdit = { mode: 'off', first: null, draft: null, editId: null }
 
 type LayerKey = 'heat' | 'clusters' | 'manual' | 'prev'
 type Prefs = { tf: ChartTf; span: Span; layers: Record<LayerKey, boolean> }
@@ -122,6 +131,15 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
   const [manualZones, setManualZones] = useState<ManualZone[]>([])
   const [heat, setHeat] = useState<HeatView | null>(null)
   const [heatBusy, setHeatBusy] = useState(false)
+  const [zone, setZone] = useState<ZoneEdit>(ZONE_OFF)
+  const [rule, setRule] = useState<ZoneRule | null>(null)
+  const [keep, setKeep] = useState<Set<number>>(new Set()) // çakışıp kalacak zonlar
+  const [breaksFrom, setBreaksFrom] = useState(DEFAULT_BREAKS_DAY)
+  const [magnet, setMagnet] = useState(true)
+  const [confirm, setConfirm] = useState<'save' | 'end' | null>(null)
+  const [zoneBusy, setZoneBusy] = useState(false)
+  const [zoneErr, setZoneErr] = useState<string | null>(null)
+  const [zoneMsg, setZoneMsg] = useState<string | null>(null)
   const live = useLive()
 
   const box = useRef<HTMLDivElement>(null)
@@ -146,9 +164,17 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
   const manualRef = useRef<ManualZone[]>([])
   prefsRef.current = prefs
   manualRef.current = manualZones
+  const zoneView = useRef({ mode: zone.mode, first: zone.first, draft: zone.draft, magnet })
+  zoneView.current = { mode: zone.mode, first: zone.first, draft: zone.draft, magnet }
 
   useEffect(() => {
     setPrefs(readPrefs())
+    try {
+      const z = JSON.parse(localStorage.getItem(ZONE_PREFS_KEY) ?? 'null')
+      if (typeof z?.magnet === 'boolean') setMagnet(z.magnet)
+    } catch {
+      // varsayılan: mıknatıs açık
+    }
     setReady(true)
   }, [])
   useEffect(() => {
@@ -351,7 +377,24 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
     manualLayer.current = ml
     ch.subscribeCrosshairMove(onCrosshair)
     ch.timeScale().subscribeVisibleLogicalRangeChange(loadOlder)
+    const editor = attachZoneEditor({
+      container: el,
+      getChart: () => chart.current,
+      getSeries: () => series.current,
+      getView: () => zoneView.current,
+      barAt: (x) => {
+        const lg = ch.timeScale().coordinateToLogical(x)
+        const r = lg === null ? undefined : rows.current[Math.round(lg)]
+        return r ? { o: r[1], h: r[2], l: r[3], c: r[4] } : null
+      },
+      labelAt: (x, y) => ml.labelAt(x, y),
+      onFirst: (price) => setZone((z) => (z.mode === 'draw' ? { ...z, first: price } : z)),
+      onDraft: (lo, hi, final) =>
+        setZone((z) => (z.mode === 'off' ? z : { ...z, mode: final ? 'adjust' : z.mode, first: null, draft: { lo, hi } })),
+      onSelect: (id) => selectZoneRef.current(id),
+    })
     return () => {
+      editor.detach()
       ch.remove()
       chart.current = null
       series.current = null
@@ -443,18 +486,186 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
     setListPrice(shownPrice)
   }, [shownPrice, liveQuote])
 
-  // Elle zonlar: açılışta ve biri eklenip kapanınca (geçerli olanların hepsi).
+  // Elle zonlar: açılışta, biri eklenip kapanınca (geçerli olanların hepsi) ve bu sayfadan kaydedince; ekleme kuralları
+  // (çakışma eşiği, uyarı sınırları) aynı yanıtta.
+  const reloadZones = useCallback(async () => {
+    try {
+      const b = await getJson<{ zones: ManualZone[]; rule: ZoneRule }>('/api/piyasa/elle-zonlar')
+      setManualZones(b.zones)
+      setRule(b.rule)
+    } catch (err) {
+      setError(`Elle zonlar okunamadı: ${(err as Error).message}`)
+    }
+  }, [])
   useEffect(() => {
-    getJson<{ zones: ManualZone[] }>('/api/piyasa/elle-zonlar')
-      .then((b) => setManualZones(b.zones))
-      .catch((err) => setError(`Elle zonlar okunamadı: ${(err as Error).message}`))
-  }, [tokens.manual])
+    void reloadZones()
+  }, [tokens.manual, reloadZones])
   useEffect(() => {
     manualLayer.current?.setZones(manualZones)
   }, [manualZones])
   useEffect(() => {
     manualLayer.current?.setVisible(prefs.layers.manual)
   }, [prefs.layers.manual])
+
+  // ─── Zon ekleme ve düzenleme ───
+  const editZone = zone.editId === null ? null : (manualZones.find((z) => z.id === zone.editId) ?? null)
+  const conflicts = useMemo(
+    () => (zone.draft && rule ? zoneConflicts(manualZones, zone.draft.lo, zone.draft.hi, rule.threshold, zone.editId) : []),
+    [zone.draft, zone.editId, manualZones, rule],
+  )
+  const warnings = useMemo(
+    () => (zone.draft && rule ? zoneWarnings(zone.draft.lo, zone.draft.hi, { ...rule, price: listPrice ?? rule.price }) : []),
+    [zone.draft, rule, listPrice],
+  )
+  useEffect(() => {
+    manualLayer.current?.setEdit(
+      zone.mode === 'off'
+        ? null
+        : {
+            hideId: zone.editId,
+            marks: new Map(conflicts.map((c) => [c.id, c.kind])),
+            draft: zone.draft,
+            first: zone.first,
+            label: zone.editId === null ? 'yeni' : `#${zone.editId}`,
+          },
+    )
+  }, [zone, conflicts])
+  useEffect(() => {
+    if (!ready) return
+    try {
+      localStorage.setItem(ZONE_PREFS_KEY, JSON.stringify({ magnet }))
+    } catch {
+      // yalnız bu sekmede
+    }
+  }, [magnet, ready])
+  useEffect(() => {
+    if (!zoneMsg) return
+    const t = setTimeout(() => setZoneMsg(null), 10_000)
+    return () => clearTimeout(t)
+  }, [zoneMsg])
+
+  const resetZoneUi = () => {
+    setKeep(new Set())
+    setConfirm(null)
+    setZoneErr(null)
+  }
+  const startZone = () => {
+    setPrefs((p) => (p.layers.manual ? p : { ...p, layers: { ...p.layers, manual: true } }))
+    resetZoneUi()
+    setZoneMsg(null)
+    setBreaksFrom(DEFAULT_BREAKS_DAY)
+    setZone({ mode: 'draw', first: null, draft: null, editId: null })
+    if (!rule) void reloadZones()
+  }
+  const cancelZone = () => {
+    setZone(ZONE_OFF)
+    resetZoneUi()
+  }
+  const selectZone = (id: number) => {
+    const z = manualRef.current.find((x) => x.id === id)
+    if (!z) return
+    setPrefs((p) => (p.layers.manual ? p : { ...p, layers: { ...p.layers, manual: true } }))
+    resetZoneUi()
+    setZoneMsg(null)
+    setZone({ mode: 'adjust', first: null, draft: { lo: z.lo, hi: z.hi }, editId: id })
+  }
+  const selectZoneRef = useRef(selectZone)
+  selectZoneRef.current = selectZone
+
+  const post = async (url: string, body?: unknown) => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    if (res.status === 401) window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`
+    return { res, body: (await res.json().catch(() => null)) as Record<string, unknown> | null }
+  }
+  const saveZone = async () => {
+    const d = zone.draft
+    if (!d || !rule || zoneBusy) return
+    if (confirm !== 'save' && (zone.editId !== null || conflicts.length > 0 || warnings.length > 0)) {
+      setConfirm('save')
+      return
+    }
+    setZoneBusy(true)
+    setZoneErr(null)
+    try {
+      const { res, body } = await post('/api/piyasa/elle-zonlar', {
+        lo: d.lo,
+        hi: d.hi,
+        editId: zone.editId,
+        seen: conflicts.map((c) => c.id),
+        end: conflicts.filter((c) => !keep.has(c.id)).map((c) => c.id),
+        breaksFrom: zone.editId === null ? new Date(`${breaksFrom}T00:00:00+03:00`).toISOString() : null,
+      })
+      if (!res.ok) {
+        setConfirm(null)
+        setZoneErr(String(body?.error ?? `HTTP ${res.status}`))
+        if (res.status === 404 || res.status === 409) await reloadZones()
+        return
+      }
+      const z = body!.zone as { id: number }
+      const ended = body!.ended as number[]
+      setZoneMsg(`#${z.id} eklendi${ended.length ? `; ${ended.map((x) => `#${x}`).join(', ')} pasife alındı` : ''}. SDL en geç 1 dakikada görür.`)
+      setZone(ZONE_OFF)
+      resetZoneUi()
+      await reloadZones()
+    } catch (err) {
+      setConfirm(null)
+      setZoneErr(`Kaydedilemedi: ${(err as Error).message}`)
+    } finally {
+      setZoneBusy(false)
+    }
+  }
+  const endZoneNow = async () => {
+    const id = zone.editId
+    if (id === null || zoneBusy) return
+    if (confirm !== 'end') {
+      setConfirm('end')
+      return
+    }
+    setZoneBusy(true)
+    setZoneErr(null)
+    try {
+      const { res, body } = await post(`/api/piyasa/elle-zonlar/${id}/kapat`)
+      if (!res.ok) {
+        setConfirm(null)
+        setZoneErr(String(body?.error ?? `HTTP ${res.status}`))
+        if (res.status === 404) await reloadZones()
+        return
+      }
+      setZoneMsg(`#${id} pasife alındı. SDL en geç 1 dakikada görür.`)
+      setZone(ZONE_OFF)
+      resetZoneUi()
+      await reloadZones()
+    } catch (err) {
+      setConfirm(null)
+      setZoneErr(`Pasife alınamadı: ${(err as Error).message}`)
+    } finally {
+      setZoneBusy(false)
+    }
+  }
+  const keyRef = useRef({ zone, confirm, saveZone, endZoneNow, cancelZone })
+  keyRef.current = { zone, confirm, saveZone, endZoneNow, cancelZone }
+  useEffect(() => {
+    if (zone.mode === 'off') return
+    const onKey = (e: KeyboardEvent) => {
+      const k = keyRef.current
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        if (k.confirm) setConfirm(null)
+        else k.cancelZone()
+      } else if (e.key === 'Enter' && !(e.target instanceof HTMLButtonElement)) {
+        if (k.confirm === 'end') void k.endZoneNow()
+        else if (k.zone.mode === 'adjust') void k.saveZone()
+        else return
+        e.preventDefault()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [zone.mode])
 
   // Heatmap: heatmap ya da cluster katmanı açıksa, seçili pencerenin en yeni snapshot'ı; yenisi gelince yeniden.
   const heatSeq = useRef(0)
@@ -608,6 +819,15 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
               {label}
             </button>
           ))}
+          <button
+            type="button"
+            className={s.chip}
+            aria-pressed={zone.mode !== 'off'}
+            onClick={() => (zone.mode === 'off' ? startZone() : cancelZone())}
+            title="Grafikte yeni elle zon çiz"
+          >
+            {zone.mode === 'off' ? '+ Zon ekle' : 'Zon çizimini kapat'}
+          </button>
         </div>
       </div>
       {wantHeat && (
@@ -638,12 +858,55 @@ export function PriceChart({ tokens, price, prev }: { tokens: ChartTokens; price
         </p>
       )}
       <div ref={box} className={`${s.wrap} ${busy ? s.busy : ''}`}>
-        <div ref={host} className={s.chart} role="img" aria-label={`Axi BTCUSD ${prefs.tf} mumları; açık katmanlar ve ayrıntıları aşağıda`} />
+        <div
+          ref={host}
+          className={`${s.chart} ${zone.mode === 'draw' ? s.drawing : ''}`}
+          role="img"
+          aria-label={`Axi BTCUSD ${prefs.tf} mumları; açık katmanlar ve ayrıntıları aşağıda`}
+        />
         <div ref={tip} className={s.tip} hidden />
         {count === 0 && <p className={s.empty}>Bu dilimde henüz mum yok.</p>}
       </div>
+      {zone.mode !== 'off' && (
+        <ZonePanel
+          mode={zone.mode}
+          editId={zone.editId}
+          editZone={editZone}
+          first={zone.first}
+          draft={zone.draft}
+          rule={rule}
+          conflicts={conflicts}
+          keep={keep}
+          warnings={warnings}
+          breaksFrom={breaksFrom}
+          magnet={magnet}
+          confirm={confirm}
+          busy={zoneBusy}
+          error={zoneErr ?? (zone.editId !== null && !editZone ? `#${zone.editId} artık geçerli değil` : null)}
+          onDraft={(lo, hi) => setZone((z) => ({ ...z, draft: { lo, hi } }))}
+          onKeep={(id, k) =>
+            setKeep((prev) => {
+              const next = new Set(prev)
+              if (k) next.add(id)
+              else next.delete(id)
+              return next
+            })
+          }
+          onBreaksFrom={setBreaksFrom}
+          onMagnet={setMagnet}
+          onSave={() => void saveZone()}
+          onEnd={() => void endZoneNow()}
+          onBack={() => setConfirm(null)}
+          onCancel={cancelZone}
+        />
+      )}
+      {zoneMsg && zone.mode === 'off' && (
+        <p className={s.zMsg} role="status">
+          {zoneMsg}
+        </p>
+      )}
       <div className={s.details}>
-        {prefs.layers.manual && <ManualList zones={manualZones} price={listPrice} />}
+        {prefs.layers.manual && <ManualList zones={manualZones} price={listPrice} onEdit={selectZone} />}
         {wantHeat && heat && <HeatLevels view={heat} price={listPrice} clusters={prefs.layers.clusters} />}
         {wantHeat && !heat && !heatBusy && <p className={s.muted}>Bu pencerede heatmap snapshot&apos;ı yok.</p>}
         {prefs.layers.prev && <PrevList prev={prev} price={listPrice} />}

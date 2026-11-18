@@ -8,10 +8,17 @@ import { specFrom, type Spec } from './sizing.js'
 const ms = (d: Date) => d.getTime()
 
 export async function loadZones(pool: Pool): Promise<Zone[]> {
-  const { rows } = await pool.query<{ id: number; lo: number; hi: number; created_at: Date; ended_at: Date | null }>(
-    'SELECT id, lo, hi, created_at, ended_at FROM elle_zones ORDER BY id',
+  const { rows } = await pool.query<{ id: number; lo: number; hi: number; created_at: Date; ended_at: Date | null; breaks_from: Date | null }>(
+    'SELECT id, lo, hi, created_at, ended_at, breaks_from FROM elle_zones ORDER BY id',
   )
-  return rows.map((r) => ({ id: r.id, lo: r.lo, hi: r.hi, createdAt: ms(r.created_at), endedAt: r.ended_at ? ms(r.ended_at) : null }))
+  return rows.map((r) => ({
+    id: r.id,
+    lo: r.lo,
+    hi: r.hi,
+    createdAt: ms(r.created_at),
+    endedAt: r.ended_at ? ms(r.ended_at) : null,
+    breaksFrom: r.breaks_from ? ms(r.breaks_from) : null,
+  }))
 }
 
 type CandleRow = { t: string; o: number; h: number; l: number; c: number; sp: number | null; u: Date }

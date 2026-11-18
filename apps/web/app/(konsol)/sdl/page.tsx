@@ -16,6 +16,18 @@ export const metadata: Metadata = { title: 'SDL' }
 
 const fmt0 = new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 0 })
 const fmt2 = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+// Elle zonun değişim geçmişi: yerine geçtiği / geçen zon, kapanma nedeni, kırılma takibi başka bir andan başlıyorsa.
+function zoneChange(z: SdlData['zones'][number], now: Date): string {
+  const parts: string[] = []
+  if (z.endedAt && z.endedAt <= now) {
+    if (z.endReason === 'duzenleme') parts.push(`düzenlendi → #${z.replacedBy}`)
+    else if (z.endReason === 'cakisma') parts.push(`yerine #${z.replacedBy}`)
+    else if (z.endReason === 'kapatma') parts.push('pasife alındı')
+  } else if (z.replaces?.length) parts.push(`${z.replaces.map((x) => `#${x}`).join(', ')} yerine`)
+  if (z.breaksFrom && z.breaksFrom.getTime() !== z.createdAt.getTime()) parts.push(`kırılma takibi ${clock(z.breaksFrom, now)}’dan`)
+  return parts.join(' · ') || '—'
+}
 const fmtLot = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const signed = (v: number, unit = '') => `${v > 0 ? '+' : v < 0 ? '−' : ''}${fmt2.format(Math.abs(v))}${unit}`
 const usd = (v: number) => `${v < 0 ? '−' : v > 0 ? '+' : ''}$${fmt2.format(Math.abs(v))}`
@@ -184,6 +196,7 @@ export default async function SdlPage({ searchParams }: Props) {
                   Üst
                 </th>
                 <th scope="col">Geçerli</th>
+                <th scope="col">Değişim</th>
               </tr>
             </thead>
             <tbody>
@@ -197,12 +210,16 @@ export default async function SdlPage({ searchParams }: Props) {
                   <td>
                     {clock(new Date(z.createdAt), now)}’dan {z.endedAt ? `${clock(new Date(z.endedAt), now)}’a` : 'beri'}
                   </td>
+                  <td>{zoneChange(z, now)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <p className={s.note}>Zon eklemek ya da kapatmak şimdilik veritabanından (elle_zones; kapatırken ended_at, yeni zon yeni numarayla).</p>
+        <p className={s.note}>
+          Zonlar Piyasa grafiğinden ve /live&apos;dan eklenir, düzenlenir, pasife alınır; silinmez. Düzenleme yeni numaralı zon
+          açar, kırılma takibi eskisinden devam eder. Değişiklik kararlara en geç 1 dakikada girer.
+        </p>
       </section>
     </>
   )

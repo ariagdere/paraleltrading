@@ -49,7 +49,9 @@ export type Side = 'LONG' | 'SHORT'
 export type Bar = { t: number; o: number; h: number; l: number; c: number; sp: number | null } // 1m; sp point
 export type Bar3 = Bar & { n: number; last: number }
 export type Bar4 = { t: number; o: number; h: number; l: number; c: number } // açılış anı
-export type Zone = { id: number; lo: number; hi: number; createdAt: number; endedAt: number | null }
+// createdAt: geçerliliğin başlangıcı; breaksFrom: kırılma takibinin başlangıcı (yoksa createdAt; 012).
+export type Zone = { id: number; lo: number; hi: number; createdAt: number; endedAt: number | null; breaksFrom?: number | null }
+export const trackStart = (z: Zone) => z.breaksFrom ?? z.createdAt
 export type Break = { t: number; dir: 'down' | 'up' } // t: 4h kapanışı
 export type BiasReport = { at: number; bias: string }
 export type Exit = { t: number; kind: 'SL' | 'TP'; price: number; ambiguous: boolean }
@@ -110,11 +112,12 @@ export function wilderAtr(c4: Bar4[], n: number = SDL.atrLen): Array<number | nu
   return out
 }
 
-// Zonun kırılmaları, oluştuğu 4h kapanışından (createdAt bir 4h kapanışı değilse ondan sonraki ilk kapanıştan)
-// bitişine ya da upto'ya kadar (dahil). c4 açılış sırasıyla; atr = wilderAtr(c4).
+// Zonun kırılmaları, takibin başladığı 4h kapanışından (trackStart: breaksFrom, yoksa createdAt; 4h kapanışı değilse
+// ondan sonraki ilk kapanıştan) bitişine ya da upto'ya kadar (dahil). c4 açılış sırasıyla; atr = wilderAtr(c4).
 export function zoneBreaks(z: Zone, c4: Bar4[], atr: Array<number | null>, upto?: number): Break[] {
-  let i0 = c4.findIndex((k) => k.t + H4 === z.createdAt)
-  if (i0 < 0) i0 = c4.findIndex((k) => k.t + H4 >= z.createdAt)
+  const from = trackStart(z)
+  let i0 = c4.findIndex((k) => k.t + H4 === from)
+  if (i0 < 0) i0 = c4.findIndex((k) => k.t + H4 >= from)
   if (i0 < 0) return []
   let side: 'above' | 'below' = c4[i0]!.c >= (z.lo + z.hi) / 2 ? 'above' : 'below'
   const end = z.endedAt ?? Number.POSITIVE_INFINITY

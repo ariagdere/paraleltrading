@@ -3,6 +3,7 @@ import {
   SESSION_COOKIE, authCredentials, createSessionToken, isHttpsRequest, isSameOrigin, needsRefresh, publicUrl,
   safeNextPath, sessionCookieOptions, verifySessionToken,
 } from '@/lib/session'
+import { isZoneApiPath, zoneTokenOk } from '@/lib/zone-token'
 
 // Bütün sayfalar ve API için erişim kontrolü (Next 16'da middleware yerine proxy).
 // - Sayfalar oturum çerezi ister; yoksa /login'e yönlendirilir.
@@ -10,6 +11,7 @@ import {
 // - Yazan API istekleri başka bir siteden geliyorsa 403 (CSRF).
 // - WEB_USER / WEB_PASSWORD tanımlı değilse hiçbir sayfa açılmaz: giriş sayfası yapılandırma hatasını gösterir.
 // - Oturumsuz yollar: /login, /api/health (Railway sağlık kontrolü), /api/auth/login, /api/auth/logout.
+// - Elle zon API'si (/api/piyasa/elle-zonlar) eski sistemin /live sunucusundan gizli anahtarla da açılır (ZONE_API_TOKEN).
 
 const PUBLIC_PATHS = new Set(['/api/health', '/api/auth/login', '/api/auth/logout'])
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
@@ -17,6 +19,7 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 export async function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl
   if (PUBLIC_PATHS.has(pathname)) return NextResponse.next()
+  if (isZoneApiPath(pathname) && zoneTokenOk(req)) return NextResponse.next()
 
   if (pathname.startsWith('/api/') && !SAFE_METHODS.has(req.method)) {
     const o = isSameOrigin(req)

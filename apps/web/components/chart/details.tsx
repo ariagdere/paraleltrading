@@ -137,7 +137,8 @@ export function PrevList({ prev, price }: { prev: PrevLevels; price: number | nu
 }
 
 // Elle zonlar: geçerli olanların hepsi, grafikteki sırayla (yukarıdan aşağı); fiyatın içinde olduğu zon işaretli.
-export function ManualList({ zones, price }: { zones: ManualZone[]; price: number | null }) {
+// onEdit: satırdaki "Düzenle" grafikte zonu seçer (grafikte numarasına tıklamakla aynı).
+export function ManualList({ zones, price, onEdit }: { zones: ManualZone[]; price: number | null; onEdit?: (id: number) => void }) {
   const ref = price
   const sorted = [...zones].sort((a, b) => b.lo - a.lo)
   const above = ref === null ? sorted : sorted.filter((z) => z.lo > ref)
@@ -156,6 +157,13 @@ export function ManualList({ zones, price }: { zones: ManualZone[]; price: numbe
       </td>
       <td className={`num ${s.muted}`}>{ref !== null ? pct(dir === '↑' ? z.lo : dir === '↓' ? z.hi : ref, ref) : ''}</td>
       <td className={`num ${s.muted}`}>{dm.format(z.createdAt)}</td>
+      {onEdit && (
+        <td>
+          <button type="button" className={s.rowBtn} onClick={() => onEdit(z.id)} aria-label={`#${z.id} zonunu düzenle`}>
+            Düzenle
+          </button>
+        </td>
+      )}
     </tr>
   )
   return (
@@ -175,6 +183,11 @@ export function ManualList({ zones, price }: { zones: ManualZone[]; price: numbe
                   <th scope="col">Bant</th>
                   <th scope="col">Uzaklık</th>
                   <th scope="col">Geçerli</th>
+                  {onEdit && (
+                    <th scope="col">
+                      <span className="visually-hidden">İşlem</span>
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -182,7 +195,7 @@ export function ManualList({ zones, price }: { zones: ManualZone[]; price: numbe
                 {inside.map((z) => row(z, '•'))}
                 {ref !== null && (
                   <tr className={s.priceRow}>
-                    <th scope="row" colSpan={4}>
+                    <th scope="row" colSpan={onEdit ? 5 : 4}>
                       fiyat <span className="num">{fmtP.format(ref)}</span>
                       {inside.length > 0 ? `, #${inside[0]!.id} içinde` : ''}
                     </th>
@@ -193,8 +206,9 @@ export function ManualList({ zones, price }: { zones: ManualZone[]; price: numbe
             </table>
           </div>
           <p className={s.note}>
-            Ari&apos;nin çizdiği zonlar; SDL v3 elle zon modeli bunlarla işlem yapıyor. Grafikte geçerli olanların hepsi, grafik boyunca. Zon eklemek ya
-            da kapatmak şimdilik veritabanından (elle_zones).
+            Ari&apos;nin çizdiği zonlar; SDL v3 elle zon modeli bunlarla işlem yapıyor. Grafikte geçerli olanların hepsi, grafik boyunca.
+            Zon eklemek için grafiğin üstündeki &quot;Zon ekle&quot;; düzenlemek ya da pasife almak için grafikte numarasına tıkla ya
+            da buradan &quot;Düzenle&quot;. Değişiklik SDL&apos;nin kararlarına en geç 1 dakikada girer.
           </p>
         </>
       )}
