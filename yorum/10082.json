@@ -1,0 +1,21 @@
+{
+  "run_id": 10082,
+  "generated_at": "2026-11-19T08:08:03Z",
+  "ozet": "Elle başlatılan bu koşuda (21 Eylül–19 Kasım, yaklaşık 59 gün, motor v2) iki yönde de şanstan ayrışan bir kombinasyon yok. Long'un en iyisi 31 işlemde +5,77 R ile şans testinin %95'lik değeri olan +11,90 R'nin, short'un en iyisi 57 işlemde +13,22 R ile +25,51 R'nin altında kaldı; ikisi de şans tekrarlarının yalnız %14'ünden ve %6'sından iyi. Yön yine belirleyici: filtresiz short 161 işlemde +7,41 R, filtresiz long 112 işlemde −14,90 R.",
+  "gecerlilik": "Koşu #2'nin kuralları 1 Kasım 04:00–19 Kasım 11:05 arasında (yaklaşık 18 gün) denetlendi. Short tarafında 10 kuraldan 8'i tuttu, #4 (ZLEMA 4h ters) +0,81 R ile artıda kaldı ama işlem başına R'si filtresiz tabanın altında olduğu için tutmadı, #8'de veri az; long tarafında 10 kuralın hiçbiri tutmadı (8 tutmuyor, 2 veri az) ve hepsi ekside kaldı. Birleşik kural 46 işlemde −1,54 R ile tutmadı. Koşu #2'nin bulguları şansla açıklanabilir düzeydeydi (short #1 +9,41 R, %95'lik değer +13,27 R); short kurallarının tutması kısmen bu aralıkta filtresiz short'un da artıda olmasından (70 işlemde +3,55 R) geliyor, ama 8 kuralın işlem başına R'de tabanı geçmesi yarıdan belirgin fazla.",
+  "bulgular": [
+    "Koşu #2'nin short #1 kuralı (ZLEMA 1h nötr · Yakın/uzak oranı 0,4–0,7) aralıkta 26 işlemde +3,29 R ile tuttu (işlem başına +0,13 R, taban +0,05 R) ve bu koşuda 65 işlemde +11,70 R ile #5'te.",
+    "Tek başına 'Yakın/uzak oranı 0,7–1' aralıkta 34 işlemde +6,35 R ile en çok kazandıran denetlenen kural oldu ve bu koşuda 82 işlemde +11,92 R ile short #3; short'un en iyi 10 kuralının 7'sinde Yakın/uzak oranı koşulu var.",
+    "Yeni short #1 (Yakın/uzak oranı 0,7–1 · Bias aynı) 57 işlemde +13,22 R verdi; bias raporları 2 Ekim'de başladığından işlemleri daha kısa bir dönemden geliyor ve koşu #2'de bias koşulu henüz denenmemişti.",
+    "Long tarafında aralığın filtresiz tabanı 36 işlemde −5,37 R ve denetlenen kuralların 5'i tabandan da kötü (ör. ZLEMA 1h aynı · L/S TT 5m aynı 0–15° 26 işlemde −8,72 R); koşu #2'nin long #1'i bu koşunun ilk 10'unda yok.",
+    "Filtresiz toplam ay ay geriledi: Eylül'ün 9 gününde 41 işlemde +2,25 R, Ekim'de 147 işlemde −6,49 R, Kasım'ın 18 gününde 85 işlemde −3,26 R; en iyi long ve short birlikte 88 işlemde +19,00 R ile şans ortancası +26,40 R'nin bile altında."
+  ],
+  "oneriler": [
+    "Short için Yakın/uzak oranı 0,7–1 ve ZLEMA 1h nötr · Yakın/uzak oranı 0,4–0,7 kurallarını bir ay daha izle; ikisi de iki koşuda üst sıralarda ve son aralıkta tuttu.",
+    "Bias aynı koşulunu short'ta, aynı dönemin (2 Ekim sonrası) filtresiz tabanıyla ayrıca karşılaştır; toplam R'si daha kısa dönemden geldiği için doğrudan kıyas yanıltıcı olabilir.",
+    "Long kurallarını şimdilik bir sonraki aylık koşuda yeniden değerlendir; bu dönemde filtresiz long ekside ve en iyi long kuralları 30–39 işlemle eşiğe çok yakın."
+  ],
+  "guven": "Düşük",
+  "model": "claude-opus-5-5",
+  "prompt_version": "v1"
+}
