@@ -11,7 +11,9 @@
 //
 // Değişkenler işlem yönüne göre: ZLEMA (oluşan mumla; 4h ve 1d Axi sunucu saatine hizalı) aynı/ters/nötr; L/S açısı
 // (global ve TT; yayımlanmış son nokta, ts ≤ T − dilim, iki dilimden eski değil) aynı/ters × 0–15°, 15–30°, 30°+;
-// yakın/uzak cluster mesafesi oranı 0–0,4, 0,4–0,7, 0,7–1.
+// yakın/uzak cluster mesafesi oranı 0–0,4, 0,4–0,7, 0,7–1; günlük bias aynı/ters/nötr (T'den önce dala düşmüş son
+// rapor: hafta sonu ve sabah raporundan önce bir önceki rapor geçerli). Bias koşulları yalnız raporu olan kararlara
+// uyar: ilk rapordan önceki kararlar diğer koşullarla aramada kalır, bias'lı koşullara girmez.
 //
 // Arama long ve short için ayrı: aynı anda tek pozisyon, 1 ve 2 koşullu bütün kombinasyonlar, 3 ve 4 koşullular en
 // iyi 20'nin üstüne birer koşul ekleyerek; en az 30 işlemliler toplam R'ye göre sıralı. Şans testi: işlem sonuçları
@@ -22,7 +24,7 @@
 import { axiOpen } from '@pt/db/axitime'
 import { zlemaZone, type Zone } from '../indicators.js'
 
-export const SIM_ENGINE = 'v1'
+export const SIM_ENGINE = 'v2' // v2: günlük bias değişkeni
 
 export const SIM = {
   span: '12h',
@@ -61,6 +63,7 @@ export const ANGLE_KEYS = LS_METRICS.flatMap(([metric, label]) =>
 const Z_BUCKETS = ['ayni', 'ters', 'notr'] as const
 const A_BUCKETS = ['ayni_0_15', 'ayni_15_30', 'ayni_30', 'ters_0_15', 'ters_15_30', 'ters_30'] as const
 const RR_NAME = 'Yakın/uzak oranı'
+const BIAS_NAME = 'Bias'
 const RR_BUCKETS = [
   ['0–0,4', 0, 0.4],
   ['0,4–0,7', 0.4, 0.7],
@@ -75,12 +78,15 @@ export type Bar = { t: number; o: number; h: number; l: number; c: number }
 export type Bar1 = Bar & { s: number | null } // s: spread ($); mumda yoksa null
 export type Snap = { id: number; avail: number; t1: number; up: number; dn: number } // up/dn Axi fiyatıyla (seviye − baz)
 export type AngleSeries = { ts: number[]; a: (number | null)[] }
+export type BiasDir = 'LONG' | 'SHORT' | 'NEUTRAL'
+export type BiasSeries = { t: number[]; b: BiasDir[] } // t: raporun dala düştüğü an (commit), sıralı
 export type Inputs = {
   m1: Bar1[]
   m5: Bar[]
   tf: Record<ZTf, Bar[]>
   snaps: Snap[] // avail'e göre sıralı
   angles: Record<string, AngleSeries> // `${metric}_${period}`
+  bias: BiasSeries
 }
 
 // Sıralı dizide t'den küçük ya da eşit son öğenin sırası (yoksa -1).
@@ -113,6 +119,7 @@ export type Candidates = {
   exitT: (number | null)[]
   zones: Zone[][] // [i][Z_TFS sırası]
   angles: number[][] // [i][ANGLE_KEYS sırası]
+  bias: (BiasDir | null)[] // null: o an henüz rapor yok
   snapId: number[]
   from: number | null
   to: number
@@ -171,7 +178,7 @@ export async function buildCandidates(inp: Inputs, to: number, pause: Pause = no
     }
     return Infinity
   })
-  const out: Candidates = { n: 0, T: [], long: [], P: [], near: [], far: [], R: [], exitT: [], zones: [], angles: [], snapId: [], from: null, to }
+  const out: Candidates = { n: 0, T: [], long: [], P: [], near: [], far: [], R: [], exitT: [], zones: [], angles: [], bias: [], snapId: [], from: null, to }
   const pct = SIM.tpPct / 100
   const slPct = SIM.slPct / 100
   let work = 0
@@ -246,6 +253,8 @@ export async function buildCandidates(inp: Inputs, to: number, pause: Pause = no
     out.exitT.push(exitT)
     out.zones.push(zones)
     out.angles.push(angles)
+    const bi = lastAtOrBefore(inp.bias.t, T)
+    out.bias.push(bi < 0 ? null : inp.bias.b[bi]!)
     out.snapId.push(sp.id)
     if (out.from === null) out.from = T
     if (++work % 200 === 0) await pause()
@@ -317,6 +326,10 @@ export class SideSet {
         return rr >= lo && rr < hi
       })
     }
+    // rapor yoksa (null) üçüne de uymaz
+    add([BIAS_NAME, 'ayni'], (i) => c.bias[i] === same)
+    add([BIAS_NAME, 'ters'], (i) => c.bias[i] === opp)
+    add([BIAS_NAME, 'notr'], (i) => c.bias[i] === 'NEUTRAL')
   }
 
   mask(conds: Cond[], extra?: Uint32Array): Uint32Array {
@@ -463,7 +476,7 @@ const RANGE_WORD: Record<string, string> = { '0_15': '0–15°', '15_30': '15–
 export function condText(conds: Cond[]): string {
   return conds
     .map(([name, b]) => {
-      if (name.startsWith('ZLEMA')) return `${name} ${SIDE_WORD[b] ?? b}`
+      if (name.startsWith('ZLEMA') || name === BIAS_NAME) return `${name} ${SIDE_WORD[b] ?? b}`
       if (name === RR_NAME) return `${name} ${b}`
       const side = b.slice(0, 4)
       return `${name} ${SIDE_WORD[side] ?? side} ${RANGE_WORD[b.slice(5)] ?? b.slice(5)}`
