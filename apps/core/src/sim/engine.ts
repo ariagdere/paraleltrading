@@ -3,7 +3,7 @@
 //
 // Aday: her Axi 5m kapanışında (T) o ana kadar gelmiş son 12h heatmap'in 1. cluster'ları, bazla Axi fiyatına
 // kaydırılmış. Yalnız bütün değişkenlerin dolu olduğu saatler: snapshot en çok 60 dk eski (o saatin heatmap'i), ZLEMA
-// 15m/1h/4h/1d, 8 L/S açısı ve günlük bias var. Snapshot'tan (son sütunundan) sonra Axi 1m fiyatı cluster'lardan birine
+// 15m/1h/4h/1d ve 8 L/S açısının hepsi var. Snapshot'tan (son sütunundan) sonra Axi 1m fiyatı cluster'lardan birine
 // değdiyse bir sonraki heatmap'e kadar setup yok. Yön yakın cluster'a; TP o anki fiyattan (5m kapanışı, bid) yakın
 // mesafenin %75'i, SL uzak mesafenin %75'i; TP 60 $'dan kısaysa aday yok. Giriş T'den sonraki ilk 1m mumunun
 // açılışında (en çok 10 dk sonra); BUY ask'tan (bid + mumun spread'i), SELL bid'den. Çıkış 1m mumlarıyla; mum seviyenin
@@ -12,7 +12,8 @@
 // Değişkenler işlem yönüne göre: ZLEMA (oluşan mumla; 4h ve 1d Axi sunucu saatine hizalı) aynı/ters/nötr; L/S açısı
 // (global ve TT; yayımlanmış son nokta, ts ≤ T − dilim, iki dilimden eski değil) aynı/ters × 0–15°, 15–30°, 30°+;
 // yakın/uzak cluster mesafesi oranı 0–0,4, 0,4–0,7, 0,7–1; günlük bias aynı/ters/nötr (T'den önce dala düşmüş son
-// rapor: hafta sonu ve sabah raporundan önce bir önceki rapor geçerli; ilk rapordan önce aday yok).
+// rapor: hafta sonu ve sabah raporundan önce bir önceki rapor geçerli). Bias koşulları yalnız raporu olan kararlara
+// uyar: ilk rapordan önceki kararlar diğer koşullarla aramada kalır, bias'lı koşullara girmez.
 //
 // Arama long ve short için ayrı: aynı anda tek pozisyon, 1 ve 2 koşullu bütün kombinasyonlar, 3 ve 4 koşullular en
 // iyi 20'nin üstüne birer koşul ekleyerek; en az 30 işlemliler toplam R'ye göre sıralı. Şans testi: işlem sonuçları
@@ -118,7 +119,7 @@ export type Candidates = {
   exitT: (number | null)[]
   zones: Zone[][] // [i][Z_TFS sırası]
   angles: number[][] // [i][ANGLE_KEYS sırası]
-  bias: BiasDir[]
+  bias: (BiasDir | null)[] // null: o an henüz rapor yok
   snapId: number[]
   from: number | null
   to: number
@@ -204,8 +205,6 @@ export async function buildCandidates(inp: Inputs, to: number, pause: Pause = no
     const e = m1[k]!
     const es = spread(e)
     if (long ? !(sl < e.o && e.o < tp) : !(sl > e.o + es && e.o + es > tp)) continue
-    const bi = lastAtOrBefore(inp.bias.t, T)
-    if (bi < 0) continue // ilk bias raporundan önce
     const zones: Zone[] = []
     for (const tf of Z_TFS) {
       const z = zoneForming(inp, tf, T)
@@ -254,7 +253,8 @@ export async function buildCandidates(inp: Inputs, to: number, pause: Pause = no
     out.exitT.push(exitT)
     out.zones.push(zones)
     out.angles.push(angles)
-    out.bias.push(inp.bias.b[bi]!)
+    const bi = lastAtOrBefore(inp.bias.t, T)
+    out.bias.push(bi < 0 ? null : inp.bias.b[bi]!)
     out.snapId.push(sp.id)
     if (out.from === null) out.from = T
     if (++work % 200 === 0) await pause()
@@ -326,6 +326,7 @@ export class SideSet {
         return rr >= lo && rr < hi
       })
     }
+    // rapor yoksa (null) üçüne de uymaz
     add([BIAS_NAME, 'ayni'], (i) => c.bias[i] === same)
     add([BIAS_NAME, 'ters'], (i) => c.bias[i] === opp)
     add([BIAS_NAME, 'notr'], (i) => c.bias[i] === 'NEUTRAL')

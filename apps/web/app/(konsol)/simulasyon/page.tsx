@@ -138,7 +138,7 @@ export default async function SimulasyonPage({ searchParams }: Props) {
           <li>
             Değişkenler işlem yönüne göre: ZLEMA 15m, 1h, 4h, 1d (oluşan mumla; aynı, ters, nötr), L/S açısı global ve TT × 5m, 15m, 1h, 4h (0–15°, 15–30°, 30°+;
             aynı ya da ters), yakın/uzak cluster mesafesi oranı (0–0,4, 0,4–0,7, 0,7–1), günlük bias (karar anından önce gelen son rapor: aynı, ters, nötr; hafta
-            sonu cuma raporu geçerli).
+            sonu cuma raporu geçerli; ilk rapordan, 2 Ekim&apos;den önceki kararlarda bias koşulları değerlendirilmez).
           </li>
           <li>
             Kombinasyonlar en az 30 işlemle, toplam R&apos;ye göre sıralı. Şans testi: işlem sonuçları karar anları arasında rastgele kaydırılıp aynı arama 200 kez
@@ -481,7 +481,7 @@ function Months({ r }: { r: SimResults }) {
         Yalnız bütün değişkenlerin dolu olduğu saatler: o saatin 12h heatmap&apos;i gelmiş,{' '}
         {r.engine === 'v1'
           ? 'ZLEMA ve L/S açıları var (bu koşuda günlük bias değişkeni yoktu).'
-          : 'ZLEMA, L/S açıları ve günlük bias var (ilk bias raporu 2 Ekim’de).'}{' '}
+          : 'ZLEMA ve L/S açıları var. Bias koşulları yalnız raporu olan kararlarda (ilk rapor 2 Ekim’de) değerlendirilir.'}{' '}
         15 Ekim&apos;e kadar 12h heatmap eski
         döngülerden günde birkaç kez geliyordu; o dönemde yalnız heatmap&apos;in geldiği saatler sayılır.
       </p>
