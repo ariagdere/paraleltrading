@@ -1,10 +1,10 @@
 import type { Pool } from '@pt/db'
 import { SYMBOL } from '../sync.js'
-import { LS_METRICS, LS_PERIODS, SIM, ZTF, Z_TFS, type AngleSeries, type Bar, type Bar1, type Inputs, type Snap } from './engine.js'
+import { LS_METRICS, LS_PERIODS, SIM, ZTF, Z_TFS, type AngleSeries, type Bar, type Bar1, type BiasDir, type Inputs, type Snap } from './engine.js'
 
 // Motorun girdileri veritabanından: Axi mumları (1m ve 5m SIM_FROM'dan; 15m, 1h, 4h, 1d ZLEMA ısınması için 151 mum
-// öncesinden), 12h heatmap seviyeleri (bazı ve 1. cluster'ları olanlar), L/S açıları. Spread mumun spread_points'i ×
-// sembolün point değeri (yoksa 0,01).
+// öncesinden), 12h heatmap seviyeleri (bazı ve 1. cluster'ları olanlar), L/S açıları, günlük bias raporları (dala
+// düştükleri anla). Spread mumun spread_points'i × sembolün point değeri (yoksa 0,01).
 
 export const SIM_FROM = new Date(process.env.SIM_FROM || '2026-09-17T00:00:00Z')
 const DEFAULT_POINT = 0.01
@@ -61,11 +61,18 @@ export async function loadInputs(pool: Pool, to: Date): Promise<Inputs> {
     }
   }
 
+  // to'ya kadar dala düşmüş bütün raporlar (SIM_FROM'dan önceki son rapor da geçerli olabilir)
+  const { rows: biasRows } = await pool.query<{ t: string; b: BiasDir }>(
+    `SELECT ${ms('committed_at')} AS t, bias AS b FROM daily_bias WHERE committed_at <= $1 ORDER BY committed_at, source_file`,
+    [to],
+  )
+
   return {
     m1: m1.map((r): Bar1 => ({ ...bar(r), s: r.sp === null ? null : r.sp * point })),
     m5: m5.map(bar),
     tf,
     snaps,
     angles,
+    bias: { t: biasRows.map((r) => Number(r.t)), b: biasRows.map((r) => r.b) },
   }
 }

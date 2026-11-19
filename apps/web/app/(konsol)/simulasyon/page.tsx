@@ -77,8 +77,8 @@ export default async function SimulasyonPage({ searchParams }: Props) {
           </form>
         </div>
         <p className={s.lead}>
-          Naif setup&apos;ın değişken taraması: her 5m kapanışında yakın cluster yönüne 75/75 setup; long ve short ayrı ayrı ZLEMA, L/S açısı ve yakın/uzak cluster
-          oranının 1–4 koşullu kombinasyonları, şans testi ve önceki bulgunun denetimi. Her ayın 1&apos;inde 04:00&apos;te kendiliğinden çalışır; Claude&apos;un yorumu
+          Naif setup&apos;ın değişken taraması: her 5m kapanışında yakın cluster yönüne 75/75 setup; long ve short ayrı ayrı ZLEMA, L/S açısı, yakın/uzak cluster
+          oranı ve günlük bias&apos;ın 1–4 koşullu kombinasyonları, şans testi ve önceki bulgunun denetimi. Her ayın 1&apos;inde 04:00&apos;te kendiliğinden çalışır; Claude&apos;un yorumu
           aynı sabah gelir.
         </p>
         {request && <p className={s.notice}>{request}</p>}
@@ -137,7 +137,8 @@ export default async function SimulasyonPage({ searchParams }: Props) {
           <li>Giriş sonraki 1m mumunun açılışında; BUY ask&apos;tan, SELL bid&apos;den; aynı mumda TP ve SL olursa SL. Her yönde aynı anda tek pozisyon.</li>
           <li>
             Değişkenler işlem yönüne göre: ZLEMA 15m, 1h, 4h, 1d (oluşan mumla; aynı, ters, nötr), L/S açısı global ve TT × 5m, 15m, 1h, 4h (0–15°, 15–30°, 30°+;
-            aynı ya da ters), yakın/uzak cluster mesafesi oranı (0–0,4, 0,4–0,7, 0,7–1).
+            aynı ya da ters), yakın/uzak cluster mesafesi oranı (0–0,4, 0,4–0,7, 0,7–1), günlük bias (karar anından önce gelen son rapor: aynı, ters, nötr; hafta
+            sonu cuma raporu geçerli).
           </li>
           <li>
             Kombinasyonlar en az 30 işlemle, toplam R&apos;ye göre sıralı. Şans testi: işlem sonuçları karar anları arasında rastgele kaydırılıp aynı arama 200 kez
@@ -477,7 +478,11 @@ function Months({ r }: { r: SimResults }) {
         Veri
       </h2>
       <p className={s.note}>
-        Yalnız bütün değişkenlerin dolu olduğu saatler: o saatin 12h heatmap&apos;i gelmiş, ZLEMA ve L/S açıları var. 15 Ekim&apos;e kadar 12h heatmap eski
+        Yalnız bütün değişkenlerin dolu olduğu saatler: o saatin 12h heatmap&apos;i gelmiş,{' '}
+        {r.engine === 'v1'
+          ? 'ZLEMA ve L/S açıları var (bu koşuda günlük bias değişkeni yoktu).'
+          : 'ZLEMA, L/S açıları ve günlük bias var (ilk bias raporu 2 Ekim’de).'}{' '}
+        15 Ekim&apos;e kadar 12h heatmap eski
         döngülerden günde birkaç kez geliyordu; o dönemde yalnız heatmap&apos;in geldiği saatler sayılır.
       </p>
       <div className={s.scroll}>

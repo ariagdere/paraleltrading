@@ -7,7 +7,7 @@ core, collector'ın yazdığı ham verilerden hesaplanan değerleri üretip ayn�
 - **Heatmap seviyeleri** (`heatmap_levels`): her heatmap snapshot'ı (12h, 24h, 48h) için her yönde en çok 3 cluster, %1/2/3 bant likiditesi ve heatmap fiyatı ile Axi fiyatı arasındaki baz.
 - **L/S açıları** (`lsr_angles`): global ve TT pozisyon oranı için 5m, 15m, 1h ve 4h dilimlerinde serinin her noktasında açı.
 - **Naif kural kararları** (`naive_decisions`): eski sistemin naif kuralının yeni sistemin verisiyle yeniden oynatılması ve ileri izlemesi (doğrulama). 18 Eylül'den bu yana her 12h snapshot'ında karar ve sinyalse Axi 1m mumlarıyla benzetilen işlem.
-- **Kombinasyon simülasyonu** (`sim_runs`): naif setup'ın long ve short için ZLEMA, L/S açısı ve yakın/uzak cluster oranı kombinasyonlarıyla taranması, şans testi ve bir önceki koşunun bulgularının arada geçen dönemde denetimi. Her ayın 1'inde 04:00'te (İstanbul) ve web'in Simülasyon sayfasındaki "Şimdi çalıştır"la. Sonuç GitHub'daki `sim-data` dalına da yazılır; Claude'un zamanlanmış görevi oradan okuyup yorumunu aynı dala koyar, core yorumu alıp sayfaya taşır.
+- **Kombinasyon simülasyonu** (`sim_runs`): naif setup'ın long ve short için ZLEMA, L/S açısı, yakın/uzak cluster oranı ve günlük bias kombinasyonlarıyla taranması, şans testi ve bir önceki koşunun bulgularının arada geçen dönemde denetimi. Her ayın 1'inde 04:00'te (İstanbul) ve web'in Simülasyon sayfasındaki "Şimdi çalıştır"la. Sonuç GitHub'daki `sim-data` dalına da yazılır; Claude'un zamanlanmış görevi oradan okuyup yorumunu aynı dala koyar, core yorumu alıp sayfaya taşır.
 
 - **SDL v3, elle zonlar** (`sdl_setups`, `sdl_orders`, `sdl_bars`): MetaApi fiyat akışından 1m mumlar, her 3m kapanışında kurulum ve karar, kurallardan geçen kurulumda Axi'ye emir (magic 15033; Railway'de `SDL_TRADING_ENABLED` ve web'deki NO TRADE düğmesi açıksa), saatte bir geçmişin aynı kurallarla tekrarı. Ayrıntı: [sdl.md](sdl.md).
 
@@ -44,7 +44,7 @@ Start Command'in npm üzerinden değil doğrudan node ile olması collector'daki
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
 | `NAIVE_FROM` | İsteğe bağlı: naif kararların başladığı an; varsayılan `2026-09-18T00:00:00Z` |
 | `SIM_GITHUB_TOKEN` | Simülasyon sonucunu `sim-data` dalına yazmak için GitHub token'ı (aşağıda). Yoksa simülasyon yine çalışır ve sayfada görünür, ama dala yazılamaz ve Claude yorumlayamaz |
-| `SIM_FROM` | İsteğe bağlı: simülasyon verisinin en erken anı; varsayılan `2026-09-17T00:00:00Z`. Bütün değişkenlerin dolu olduğu saatler ayrıca seçilir (şu an 21 Eylül 15:00'ten itibaren) |
+| `SIM_FROM` | İsteğe bağlı: simülasyon verisinin en erken anı; varsayılan `2026-09-17T00:00:00Z`. Bütün değişkenlerin dolu olduğu saatler ayrıca seçilir (motor v2'den beri ilk bias raporundan, 2 Ekim 14:32'den itibaren; v1'de 21 Eylül 15:00) |
 | `SIM_REPO`, `SIM_BRANCH` | İsteğe bağlı: varsayılan `ariagdere/paraleltrading` ve `sim-data` |
 | `METAAPI_TOKEN` | SDL'nin fiyat akışı ve emri için: `${{shared.METAAPI_TOKEN}}` (collector'daki paylaşılan değer; token'ın işlem yetkisi olmalı). Yoksa SDL kararlarını resmi mumlarla verir, emir gitmez |
 | `METAAPI_ACCOUNT_ID` | `${{shared.METAAPI_ACCOUNT_ID}}` |
@@ -205,11 +205,11 @@ Eski sistemin naif kuralı (hakari-trigger-orchestrator) birebir; tek fark ZLEMA
 
 ### Kombinasyon simülasyonu (`sim_runs`)
 
-Naif setup'ı hangi değişken koşullarında daha iyi çalışıyor: her koşu `sim_runs`'ta bir satır (istek, durum, sonuç `results`, yorum `comment`). Motor sürümü `v1`.
+Naif setup'ı hangi değişken koşullarında daha iyi çalışıyor: her koşu `sim_runs`'ta bir satır (istek, durum, sonuç `results`, yorum `comment`). Motor sürümü `v2` (v1'e günlük bias eklendi; sürüm koşunun `engine` sütununda).
 
 - **Karar noktası:** her Axi 5m kapanışı. O an son 12h snapshot'ı en çok 60 dakika eski olmalı, bazı ve iki yanda 1. cluster'ı olmalı; cluster'lar baz kadar kaydırılıp Axi fiyatına çevrilir. Snapshot'tan sonra fiyat cluster'lardan birine değdiyse bir sonraki snapshot'a kadar setup yok. Bütün değişkenleri dolu olmayan kararlar dışarıda kalır.
 - **Setup ve işlem:** yön yakın cluster'a; TP yakın mesafenin %75'i, SL uzak mesafenin %75'i, kararın 5m kapanışından; TP en az 60 $. Giriş sonraki 1m mumunun açılışında (10 dakika içinde mum yoksa işlem yok); BUY ask'tan (bid + spread), SELL bid'den. Seviyenin ötesinde açılan mumda açılıştan çıkar; aynı mumda TP ve SL olursa SL. Her yönde aynı anda tek pozisyon.
-- **Değişkenler (işlem yönüne göre):** ZLEMA bölgesi 15m, 1h, 4h, 1d (son 149 kapanmış mum ve karar anına kadarki 1m'lerden oluşan mum; aynı, ters, nötr); L/S açısı global ve TT × 5m, 15m, 1h, 4h (lag 1; aynı ya da ters × 0–15°, 15–30°, 30°+); yakın/uzak cluster mesafesi oranı (0–0,4, 0,4–0,7, 0,7–1).
+- **Değişkenler (işlem yönüne göre):** ZLEMA bölgesi 15m, 1h, 4h, 1d (son 149 kapanmış mum ve karar anına kadarki 1m'lerden oluşan mum; aynı, ters, nötr); L/S açısı global ve TT × 5m, 15m, 1h, 4h (lag 1; aynı ya da ters × 0–15°, 15–30°, 30°+); yakın/uzak cluster mesafesi oranı (0–0,4, 0,4–0,7, 0,7–1); günlük bias (aynı, ters, nötr: karar anından önce gelmiş son rapor; geliş anı raporun bias-data dalına düştüğü an, `daily_bias.committed_at`; hafta sonu ve sabah raporundan önce bir önceki rapor geçerli; ilk rapordan önce karar yok).
 - **Arama:** long ve short ayrı. Tekli ve ikili kombinasyonların hepsi, üçlü ve dörtlüler en iyi 20'den genişletilerek. En az 30 işlemliler toplam R'ye göre sıralanır; aynı işlem kümesini veren tekrarlar elenir; her yönün en iyi 10'u.
 - **Şans testi:** işlem sonuçları karar anları arasında rastgele kaydırılıp (dairesel, %10–90 arası) aynı arama 200 kez tekrarlanır. En iyi kombinasyon tekrarların %95'lik değerini geçmiyorsa şansla açıklanabilir. Tohum koşu numarası: aynı veriyle aynı sonuç.
 - **Birleşik:** her yönün en iyisi ayrı yuvalarda; biri açıkken diğerinin sinyali gelirse o da açılır.
