@@ -42,6 +42,12 @@ Dosyanın alanları:
   Ondalıklar dosyada 4 haneye yuvarlıdır; `curve` alanları ([kapanış anı, birikimli R] çiftleri) ve `null.values`
   (200 şans tekrarının en iyileri) uzun listelerdir, özet alanlar yeterliyse onları tek tek incelemen gerekmez.
 - `results.params`: motorun ayarları (12h heatmap, ZLEMA oluşan mumla, TP/SL %75, en az 30 işlem, 200 şans tekrarı).
+- `run.engine`: motor sürümü. `v2`'den beri değişkenlere günlük bias da dahil (`Bias aynı/ters/nötr`, işlem yönüne
+  göre; karar anından önce gelmiş son rapor, hafta sonu cuma raporu). Bias koşulları yalnız raporu olan kararlara
+  uyar (ilk rapor 2 Ekim); öncesindeki kararlar diğer koşullarda sayılır. Bias'lı kombinasyonların işlemleri bu
+  yüzden daha kısa bir dönemden gelir; toplam R'lerini karşılaştırırken bunu hesaba kat.
+  Bias çoğu gün SHORT ya da NEUTRAL olduğundan "Bias aynı" long'da az işlem verir; bias koşullarında yön etkisini
+  (`base` farkı) ayrıca düşün.
 
 ## 3. Analiz et
 
